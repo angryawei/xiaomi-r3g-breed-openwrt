@@ -1,0 +1,127 @@
+﻿============================================================
+  小米路由器R3G（Xiaomi Mi Router 3G）刷OpenWrt 23.05.6
+  刷机说明及注意事项
+============================================================
+  生成日期：2026-06-27
+
+============================================================
+【一、文件清单】
+============================================================
+  breed-mt7621-xiaomi-r3g.bin   —— Breed引导程序（已刷入路由器）
+  openwrt-r3g-initramfs.bin     —— 临时OpenWrt系统（~5.5MB）
+  openwrt-r3g-sysupgrade.bin    —— 正式OpenWrt系统（~6.4MB）
+
+============================================================
+【二、刷机流程概要】
+============================================================
+
+前提：路由器已刷入Breed引导程序（按住Reset键通电即可进入）
+
+步骤1：进入Breed恢复模式
+  - 断开路由器电源
+  - 按住Reset键不放，接通电源
+  - 约5秒后松开Reset键
+  - 电脑网线连接路由器LAN口，设置电脑IP为192.168.1.x（如192.168.1.10）
+
+步骤2：通过Telnet连接Breed并启动临时OpenWrt
+  - 打开命令提示符，执行：telnet 192.168.1.1
+  - 在Breed命令行中依次执行：
+    wget http://192.168.1.10/openwrt-r3g-initramfs.bin
+    flash bank 0x80001000 0x80000000 0x<文件大小>
+    boot linux 0x80001000
+  （需先在电脑上用HFS或类似工具搭建HTTP服务器，存放initramfs文件）
+
+步骤3：进入临时OpenWrt的LuCI界面
+  - 等待约1-2分钟，ping 192.168.1.1，确认TTL=64时表示OpenWrt已启动
+  - 浏览器访问 http://192.168.1.1
+  - 用户名：root，密码：空（首次登录无密码）
+
+步骤4：刷入正式系统
+  - 进入 System → Backup / Flash Firmware
+  - 在"Flash new firmware image"区域上传 openwrt-r3g-sysupgrade.bin
+  - 取消勾选"Keep settings"（建议清除旧配置）
+  - 点击"Continue"确认刷写
+  - 等待路由器自动重启（约2-3分钟）
+
+============================================================
+【三、易错点及重要提醒】
+============================================================
+
+1. Breed Web界面无法直接刷入OpenWrt官方sysupgrade格式固件
+   即使选择"OpenWrt布局"或"编程器固件布局"，都会报"数据无效"错误。
+   必须通过上述步骤2-4的initramfs过渡方式刷入。
+
+2. 闪存布局说明
+   Breed中有四种闪存布局：OpenWrt / 原厂 / Pandavan / PandoraBox。
+   R3G刷OpenWrt后使用OpenWrt布局。initramfs启动后只能通过LuCI
+   刷sysupgrade，不要在Breed中尝试直接刷。
+
+3. 确认OpenWrt已就绪的方法
+   initramfs启动后路由器IP可能临时不变，需通过 ping 192.168.1.1
+   确认返回的TTL值。TTL=64表示Linux/OpenWrt已启动，TTL=128表示
+   路由器仍处于Breed或其他状态。
+
+4. 内存限制与插件选择
+   R3G仅有128MB内存，不要安装OpenClash（缺bash/curl/ruby/
+   ruby-yaml/unzip等依赖且难以补全），推荐使用轻量级的ShellClash替代。
+
+5. ShellClash安装方法
+   通过SSH连接到路由器后执行：
+   wget -q --no-check-certificate -O /tmp/install.sh \
+     https://fastly.jsdelivr.net/gh/juewuy/ShellClash@master/install.sh \
+     && sh /tmp/install.sh
+   注意：ShellClash无Web管理界面，安装后通过SSH输入crash进行管理。
+
+6. Breed启动注意事项
+   Breed默认IP为192.168.1.1，DHCP可能不自动分配IP，需手动设置
+   电脑IP为192.168.1.x（如192.168.1.10，子网掩码255.255.255.0）。
+
+============================================================
+【四、重要信息】
+============================================================
+  路由器IP：      192.168.1.1
+  SSH/Web密码：   YOUR_WIFI_PASS
+  WiFi密码：      YOUR_WIFI_PASS
+  OpenWrt版本：   23.05.6 r24232
+  内核版本：      5.15.189
+  硬件架构：      ramips / mt7621
+
+============================================================
+【五、固件下载地址（备用）】
+============================================================
+  官方固件下载：
+  https://downloads.openwrt.org/releases/23.05.6/targets/ramips/mt7621/
+
+  具体文件：
+  openwrt-23.05.6-ramips-mt7621-xiaomi_mi-router-3g-initramfs-kernel.bin
+  openwrt-23.05.6-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin
+
+  Breed引导程序下载：
+  https://breed.hackpascal.net/
+
+============================================================
+【六、参考命令摘要】
+============================================================
+
+  # Telnet连接Breed
+  telnet 192.168.1.1
+
+  # Breed中下载initramfs（需先搭建HTTP服务器）
+  wget http://192.168.1.10/openwrt-r3g-initramfs.bin
+
+  # Breed中启动initramfs
+  boot linux 0x80001000
+
+  # SSH连接OpenWrt
+  ssh root@192.168.1.1
+
+  # 安装ShellClash
+  wget -q --no-check-certificate -O /tmp/install.sh \
+    https://fastly.jsdelivr.net/gh/juewuy/ShellClash@master/install.sh \
+    && sh /tmp/install.sh
+
+  # ShellClash管理
+  crash
+
+============================================================
+（内容由AI生成，仅供参考）

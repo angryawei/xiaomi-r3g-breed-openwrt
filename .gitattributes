@@ -1,0 +1,33 @@
+# ============================================================
+# 小米 R3G 刷机手册 —— .gitattributes
+# 作用：统一换行符、标记二进制、关闭路径中文转义（quotepath）
+# ============================================================
+
+# ---- 关闭 core.quotepath：中文文件名在 git status / diff 中按原文显示 ----
+# 注：core.quotepath 属于仓库级配置项，无法写入 .gitattributes 生效，
+#     需在初始化仓库后执行一次：
+#     git config --local core.quotepath false
+
+# ---- 文本文件自动识别 + 统一 LF 换行 ----
+* text=auto eol=lf
+
+# ---- 明确文本类型（用于 diff 与语言统计）----
+*.md   text eol=lf
+*.txt  text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.json text eol=lf
+*.cfg  text eol=lf
+*.sh   text eol=lf
+*.ps1  text eol=crlf
+*.py   text eol=lf
+
+# ---- 二进制文件：禁止换行符转换与文本 diff ----
+*.bin  binary
+*.img  binary
+*.jpg  binary
+*.jpeg binary
+*.png  binary
+*.gif  binary
+*.zip  binary
+*.gz   binary

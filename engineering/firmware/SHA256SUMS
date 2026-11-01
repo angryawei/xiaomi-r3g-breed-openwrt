@@ -1,0 +1,7 @@
+05ebb31fd889b148022346179346d91c60a1b4518bdc4d8b9717a62aec638bed  breed-mt7621-xiaomi-r3g.bin
+4b2b45e1e6c2dcacb9ad2b741345414eb8ba4bb434d5932a6dbd7e7354b20432  miwifi_r3g_firmware_dbc3c_2.28.46.bin
+8dc92a041dce94d1e4a667fcbdf0dea5ed60d90e2641a31918ce974dc3206462  openwrt-19.07.2-ramips-mt7621-xiaomi_mir3g-initramfs-kernel.bin
+0acd42cf8d11c796a748ebff4d1a8e071f3b2569649cdc54d1e5cdc169377d38  openwrt-19.07.2-ramips-mt7621-xiaomi_mir3g-squashfs-sysupgrade.bin
+2b670fa0fa0306bd724e91ebb4062c75ad2a96fcdcec466853a6c6d8b1fc093c  openwrt-23.05.6-ramips-mt7621-xiaomi_mi-router-3g-initramfs-kernel.bin
+b310f1a2cf71242c10703c0e341ef10acdcc8f85823dbbf9dfc0214dd1166286  openwrt-23.05.6-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin
+a53dcf136bce8c3c942423c05d038e12d22497546c2f6a14fd06aa96344540b4  openwrt-24.10.4-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin

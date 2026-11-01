@@ -1,0 +1,106 @@
+# ShellClash (mihomo) 配置模板
+# 来源: R3G /etc/ShellCrash/config.yaml（已去敏化）
+# 敏感字段 (uuid/server/public-key/short-id/servername) 已替换为占位符
+# 结构完整保留，可直接作为快速部署模板
+
+# ===== 基础配置 =====
+mixed-port: 7890           # HTTP/SOCKS5 混合代理端口
+redir-port: 7892           # Redir 透明代理端口（TUN模式不使用）
+tproxy-port: 7893          # TProxy 透明代理端口（TUN模式不使用）
+authentication: [""]
+allow-lan: true            # 允许局域网设备使用
+mode: Rule                 # 规则模式（非Global）
+log-level: info
+ipv6: true
+
+# ===== 外部控制 =====
+external-controller: :9999    # RESTful API（Dashboard连接）
+external-ui: ui               # Dashboard WebUI
+external-ui-url: ""
+secret:                       # API密钥（留空 = 无认证）
+
+# ===== TUN 透明代理（核心配置）=====
+tun:
+  enable: true
+  stack: system              # mips架构必须用system，gvisor不稳定
+  device: utun               # TUN虚拟网卡名称
+  auto-route: false          # 不自动添加路由，由nftables手动控制
+  auto-detect-interface: false
+
+# ===== 实验性功能 =====
+experimental:
+  ignore-resolve-fail: true
+  interface-name: en0
+
+# ===== 进程匹配 =====
+find-process-mode: "off"
+
+# ===== 路由标记 =====
+routing-mark: 7894           # fwmark标记值（与nftables规则对应）
+unified-delay: true
+
+# ===== DNS 配置（fake-ip 模式）=====
+dns:
+  enable: true
+  listen: :1053              # DNS监听端口（nftables prerouting_dns链重定向目标）
+  use-hosts: true
+  ipv6: true
+  default-nameserver:
+    - 223.5.5.5              # 阿里DNS（IPv4）
+    - 2400:3200::1           # 阿里DNS（IPv6）
+  direct-nameserver:
+    - 127.0.0.1              # 直连域名走本地dnsmasq
+  enhanced-mode: fake-ip     # fake-ip模式（避免DNS泄漏）
+  fake-ip-range: 28.0.0.0/8  # fake-ip地址池
+  fake-ip-range6: fc00::/16
+  fake-ip-filter:
+    - '+.*'                  # 全部域名走fake-ip
+  nameserver:
+    - 127.0.0.1              # 上游DNS（由本地dnsmasq转发到代理）
+
+# ===== 系统Hosts =====
+use-system-hosts: true
+hosts:
+  'time.android.com': 203.107.6.88         # NTP直连
+  'time.facebook.com': 203.107.6.88        # NTP直连
+  'services.googleapis.cn': services.googleapis.com  # 域名映射
+  'localhost': 127.0.0.1
+
+# ===== 代理节点（已去敏化，仅保留结构示例）=====
+# 实际部署时每个节点需填入真实 server / uuid / public-key / short-id
+proxies:
+  - name: "节点名称示例-剩余流量:XX GB"
+    type: vless
+    server: <YOUR_SERVER_ADDRESS>       # 替换为实际服务器地址
+    port: <YOUR_PORT>                   # 替换为实际端口
+    uuid: <YOUR_UUID>                   # 替换为实际UUID
+    network: tcp
+    tls: true
+    servername: <YOUR_SNI>              # 替换为实际SNI/伪装域名
+    flow: xtls-rprx-vision
+    client-fingerprint: firefox         # 浏览器指纹伪装 (chrome/firefox/safari/edge/ios/qq)
+    reality-opts:
+      public-key: <YOUR_PUBLIC_KEY>     # 替换为实际REALITY公钥
+      short-id: <YOUR_SHORT_ID>         # 替换为实际short-id
+    udp: true
+
+# ===== 代理组 =====
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies:
+      # 所有节点名称列表（部署时按实际节点填写）
+      - "节点1"
+      - "节点2"
+      # ...
+
+# ===== 规则 =====
+rules:
+  - MATCH,Proxy          # 默认全部走代理（旁路由模式）
+
+# ===== 部署说明 =====
+# 1. 替换所有 <YOUR_*> 占位符为实际值
+# 2. 复制到 /etc/ShellCrash/config.yaml
+# 3. 建立软链: ln -sf /etc/ShellCrash/config.yaml /tmp/ShellCrash/config.yaml
+# 4. 启动: /etc/ShellCrash/start.sh start
+# 5. 验证: curl -x http://192.168.1.1:7890 http://www.google.com -I

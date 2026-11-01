@@ -1,0 +1,76 @@
+# ============================================================
+# 小米 R3G 刷机手册 —— .gitignore
+# 策略：固件允许入库（单文件均 < 25MB）；只排除凭据、日志、系统垃圾
+# 依据：engineering/firmware 下 7 个 bin 最大 23.35MB，全部低于 GitHub
+#       100MB 硬限制、也低于单文件 25MB 的推荐阈值，故直接入库保证
+#       「克隆即可用」。
+# ============================================================
+
+# ---------- 1. 固件：允许入库 ----------
+# 显式反排除，防止被下面的通用 *.bin 规则误伤
+!engineering/firmware/*.bin
+!engineering/firmware/SHA256SUMS
+!engineering/firmware/SOURCES.md
+
+# 通用镜像后缀仍然忽略，避免临时/实验镜像被误提交
+#（若确有需要入库的固件，请像上面一样写 !路径 反排除）
+*.img
+*.trx
+*.chk
+*.iso
+*.part
+*.bad
+
+# ---------- 2. 含凭据 / 订阅信息的配置（禁止入库）----------
+# 真实订阅 yaml 含节点 UUID 与机场域名；含 root 口令、WiFi 密码的文件同理
+engineering/configs/RBf60If6TGXb.yaml
+engineering/configs/RB6*.yaml
+engineering/configs/*-sub*.yaml
+engineering/configs/*subconverter*
+engineering/configs/subscription*.yaml
+engineering/configs/*.local.yaml
+*.secret.yaml
+*.secret.yml
+*.local.yaml
+
+# ---------- 3. 日志与抓包（可能含内网信息）----------
+*.log
+*.pcap
+*.pcapng
+engineering/scripts/*.log
+nand-backup/
+*.bin.bak
+
+# ---------- 4. 系统垃圾 / 编辑器临时文件 ----------
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.DS_Store
+._*
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+*.orig
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+
+# ---------- 5. 本地环境文件 ----------
+.env
+.env.*
+*.pem
+*.key
+
+# ============================================================
+# 若日后需要给仓库瘦身（例如固件总体积继续增长）：
+#   1) 保留 SOURCES.md 与 SHA256SUMS（它们是校验的唯一依据）；
+#   2) 把 engineering/firmware/*.bin 从版本库移除：
+#        git rm --cached engineering/firmware/*.bin
+#   3) 改为走 GitHub Release 分发：新建 tag（如 firmware-v1），
+#      把 bin 作为 Release Assets 上传，README 里贴上 Release 链接；
+#   4) 在 .gitignore 中恢复 `engineering/firmware/*.bin` 忽略规则。
+#   注意：raw 链接不保证长期可用，下载后务必用 SHA256SUMS 校验。
+# ============================================================

@@ -1,0 +1,59 @@
+=== dnsmasq ujail 沙箱导致 DHCP 故障修复说明 ===
+
+故障现象：
+  手机连接R3G WiFi后显示"正在获取IP地址" → 最终"IP配置失败"
+  认证成功但无法完成DHCP四步握手
+
+根因分析：
+  OpenWrt 23.05 默认在 ujail 沙箱中运行 dnsmasq
+  ujail 限制了原始套接字(RAW socket)权限
+  DHCP协议需要原始套接字来构造和发送DHCPOFFER/DHCPACK
+  导致DHCP服务器无法正常响应客户端请求
+
+DHCP交互日志（/var/log/dnsmasq.log）：
+  DHCPOFFER(192.168.1.x) → 手机回复DHCPREQUEST(请求旧IP 192.168.1.67）
+  → DHCPNAK(wrong server-ID) → 手机获取IP失败
+
+关键：手机缓存了旧网络的IP（192.168.1.x），导致server-ID校验失败
+
+=== 修复步骤 ===
+
+1. 备份原始文件
+   cp /etc/init.d/dnsmasq /etc/init.d/dnsmasq.bak
+   备份路径: /etc/init.d/dnsmasq.bak
+
+2. 注释 procd_add_jail 相关行（禁用 ujail 沙箱）
+   sed -i 's/^\tprocd_add_jail dnsmasq ubus log$/\t#procd_add_jail dnsmasq ubus log/' /etc/init.d/dnsmasq
+   sed -i 's/^\tprocd_add_jail_mount/\t#procd_add_jail_mount/' /etc/init.d/dnsmasq
+   sed -i 's/^\tprocd_add_jail_mount_rw/\t#procd_add_jail_mount_rw/' /etc/init.d/dnsmasq
+
+3. 清空旧DHCP租约（可选但推荐）
+   > /tmp/dhcp.leases
+   > /var/dhcp.leases
+
+4. 重启 dnsmasq
+   /etc/init.d/dnsmasq restart
+
+5. 验证 dnsmasq 是否正常运行
+   ps | grep dnsmasq
+   # 应看到 dnsmasq 进程，且不再包含 ujail 字样
+   logread | grep dnsmasq | tail -20
+   # 应看到正常的 DHCPDISCOVER/DHCPOFFER/DHCPREQUEST/DHCPACK 四步握手
+
+=== 兜底方案（手机端静态IP） ===
+如果修复后仍不稳定，手机端设置静态IP：
+  IP地址:   192.168.1.200
+  子网掩码: 255.255.255.0
+  网关:     192.168.1.1
+  DNS:      192.168.1.1
+
+=== 回滚方案 ===
+如需恢复 ujail 沙箱：
+  cp /etc/init.d/dnsmasq.bak /etc/init.d/dnsmasq
+  /etc/init.d/dnsmasq restart
+
+=== 注意事项 ===
+1. 修改后系统升级可能覆盖 /etc/init.d/dnsmasq，升级后需重新修复
+2. 禁用 ujail 会略微降低安全性，但对旁路由场景影响可忽略
+3. 手机端"忘记网络"后重连可清除旧DHCP缓存，建议配合使用
+（内容由AI生成，仅供参考）

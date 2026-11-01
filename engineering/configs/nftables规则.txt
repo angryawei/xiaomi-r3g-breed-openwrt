@@ -1,0 +1,107 @@
+# R3G ShellClash 透明代理 nftables 防火墙规则
+# 来源: nft list table inet shellcrash (R3G 实时抓取)
+# 每条规则附带中文注释说明作用
+
+table inet shellcrash {
+
+    # ============================
+    # chain input: 入站过滤
+    # 类型: filter | 优先级: -100 | 默认: accept
+    # 作用: 保护 7890(代理端口) 和 9999(Dashboard) 不被外部访问
+    # ============================
+    chain input {
+        type filter hook input priority -100; policy accept;
+
+        iif "lo" accept                                    # 允许本地回环
+        iifname "br-lan" accept                            # 允许LAN侧访问
+        ip6 saddr { fd00::/8, fe80::/10 } accept           # 允许IPv6本地地址
+
+        tcp dport { 7890, 9999 } reject                    # 拒绝外部TCP访问代理/Dashboard
+        udp dport { 7890, 9999 } reject                    # 拒绝外部UDP访问代理/Dashboard
+    }
+
+    # ============================
+    # chain prerouting_dns: DNS 重定向
+    # 类型: nat | 优先级: dstnat | 默认: accept
+    # 作用: 将局域网DNS请求(UDP/TCP 53)重定向到本机 :1053 (mihomo fake-ip DNS)
+    # ============================
+    chain prerouting_dns {
+        type nat hook prerouting priority dstnat; policy accept;
+
+        udp dport != 53 return                              # 非DNS-UDP → 不处理
+        tcp dport != 53 return                              # 非DNS-TCP → 不处理
+        meta mark 0x00001ed6 return                         # 已有标记 → 不重复处理
+        meta skgid { 453, 7890 } return                     # 来自 dnsmasq(453) 或 mihomo(7890) → 不重定向(防环)
+        iifname != "br-lan" return                          # 非LAN接口 → 不重定向
+        ip6 saddr != { fd00::/8, fe80::/10 } return         # 非本地IPv6 → 不重定向
+
+        udp dport 53 redirect to :1053                      # DNS-UDP → 重定向到 mihomo DNS
+        tcp dport 53 redirect to :1053                      # DNS-TCP → 重定向到 mihomo DNS
+    }
+
+    # ============================
+    # chain prerouting: 透明代理流量标记
+    # 类型: filter | 优先级: mangle | 默认: accept
+    # 作用: 对需要代理的TCP/UDP流量打上 fwmark 0x1ed4
+    #       策略路由根据 fwmark 将流量送入 utun TUN 设备
+    # ============================
+    chain prerouting {
+        type filter hook prerouting priority mangle; policy accept;
+
+        tcp dport 53 return                                  # DNS(SRV)请求已在prerouting_dns处理 → 跳过
+        udp dport 53 return                                  # DNS(SRV)请求已在prerouting_dns处理 → 跳过
+
+        meta mark 0x00001ed6 return                          # 已有标记(直连) → 不重复处理
+        meta skgid 7890 return                               # 来自 mihomo 进程 → 不标记(防环)
+
+        # 非 fake-ip 地址段 + 非特殊端口 → 直连不代理
+        ip daddr != 28.0.0.0/8 tcp dport != { 22, 80, 443, 8080, 8443 } return
+        ip daddr != 28.0.0.0/8 udp dport != { 22, 80, 443, 8080, 8443 } return
+        ip6 daddr != fc00::/16 tcp dport != { 22, 80, 443, 8080, 8443 } return
+        ip6 daddr != fc00::/16 udp dport != { 22, 80, 443, 8080, 8443 } return
+
+        # 私有/保留地址段 → 直连不代理
+        ip daddr {
+            0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10,
+            127.0.0.0/8, 169.254.0.0/16,
+            172.16.0.0/12, 192.168.0.0/16,
+            224.0.0.0/3
+        } return
+
+        iifname != "br-lan" return                           # 非LAN接口 → 不标记
+        # 关键修改点：原规则使用 ip saddr != 192.168.1.0/24
+        # 改为 iifname != "br-lan" 以兼容非标准IP的客户端
+
+        meta nfproto ipv6 return                             # IPv6暂不代理(可移除)
+
+        meta l4proto { tcp, udp } meta mark set 0x00001ed4   # 打上代理标记 → 策略路由送入 utun
+    }
+}
+
+# ===== 配套策略路由规则 =====
+# 这些规则由 ShellClash 的 start.sh 自动添加
+#
+# ip rule add fwmark 0x1ed4 table 100
+#   → 所有标记 0x1ed4 的包查 table 100
+#
+# ip route add default dev utun table 100
+#   → table 100 的默认路由走 utun (mihomo TUN 虚拟网卡)
+#
+# 验证命令:
+# ip rule list | grep 0x1ed4
+# ip route show table 100
+
+# ===== 防火墙重建流程 =====
+# 1. 清除旧规则: nft delete table inet shellcrash
+# 2. 重新加载:
+#    export CRASHDIR=/etc/ShellCrash
+#    cd /etc/ShellCrash
+#    . ./libs/get_config.sh
+#    sh ./starts/fw_start.sh
+
+# ===== 验证命令 =====
+# 检查 nftables 规则加载: nft list table inet shellcrash
+# 检查策略路由:          ip rule list
+# 检查 TUN 设备:         ip link show utun
+# 测试透明代理:          curl -I http://www.google.com (从LAN客户端)
+（内容由AI生成，仅供参考）
