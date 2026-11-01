@@ -50,9 +50,9 @@ r3g刷机（github上传版）/
 ## 历史整理记录（R3G-Flash 阶段）
 
 - 整理时间：2026-11-01
-- 目标目录：`C:\Users\15363\Desktop\R3G-Flash`
+- 目标目录：`%USERPROFILE%\Desktop\R3G-Flash`
 - 原始文件：**全部保留在原位，本次仅做复制**
-- 扫描范围：`C:\Users\15363`（排除系统目录与 AppData 缓存）、`D:\`（全盘文件名 + 文档类正文扫描）、`E:\`（本机不存在该盘）
+- 扫描范围：`%USERPROFILE%`（排除系统目录与 AppData 缓存）、`D:\`（全盘文件名 + 文档类正文扫描）、`E:\`（本机不存在该盘）
 - 检索方式：文件名正则（R3G / r3g / 小米路由器3G / MiWiFi / breed / OpenWrtInvasion / sysupgrade / ShellCrash / ShellClash / OpenWrt / MT7621 / mir3g / 小米AX）+ 文档/脚本正文关键词匹配
 - 命中结果：C 盘文件名命中 45 个、文档正文命中 82 个（多数为无关项目的 "breed/openwrt" 字面误命中）；D 盘 54.6 万文件中文件名命中 8 个、正文命中 38 个，**均为游戏资源或软件内置文件，与本任务无关**
 - 去重后实际归档：**20 个文件，约 32.0 MB**
@@ -60,7 +60,7 @@ r3g刷机（github上传版）/
 ## 目录结构
 
 ```
-C:\Users\15363\Desktop\R3G-Flash\
+%USERPROFILE%\Desktop\R3G-Flash\
 ├─ docs\        10 个 75.1 KB  —— 教程/指南/手册/排障记录/拓扑
 ├─ scripts\      0 个         —— 本机未发现独立刷机脚本（命令均内嵌于文档）
 ├─ configs\      3 个 36.9 KB —— Clash/ShellCrash 配置与 nftables 规则
