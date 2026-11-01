@@ -1,14 +1,3 @@
-﻿---
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: 1dd6b709aacbcf5e01ab417f198ade06_9f549031923f11f1bcfc525400e6dd8f
-    ReservedCode1: AAw95cYoWHmVMOzdi61iAZH8+eanzyHq2yiYpeAW06M1R6oui7CA8Kt217bcMmM7MXaBeToyMxq2YQiS52miGRcdmOzay4ar7YlACztLEpJDbGbSlLlhuZNW697CMgCe8eF2M2tNwrrp9aPJABlvC5YtX3AWnDFJHPVY7TAsEqlT+l1tY0afXE14lws=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: 1dd6b709aacbcf5e01ab417f198ade06_9f549031923f11f1bcfc525400e6dd8f
-    ReservedCode2: AAw95cYoWHmVMOzdi61iAZH8+eanzyHq2yiYpeAW06M1R6oui7CA8Kt217bcMmM7MXaBeToyMxq2YQiS52miGRcdmOzay4ar7YlACztLEpJDbGbSlLlhuZNW697CMgCe8eF2M2tNwrrp9aPJABlvC5YtX3AWnDFJHPVY7TAsEqlT+l1tY0afXE14lws=
----
-
 # R3G ShellCrash 故障排查手册
 
 > 记录时间：2026-08-07  

@@ -1,14 +1,3 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: 69862c49f4ec4e710eaf569fae513e34_cdf942c1d5f111f19101525400de85a5
-    ReservedCode1: JrEaSfc0dWfzn56VyLew8waRyf+uCf4hvtSncP8RoZFDtJ7qq2ZrJebk2hXFqI8J86ZeWVgeS2HLH2G12FJAI24QYlsuvMJmyxaUq8TZ8dwEWYuDDNIuBPYUzp2mSMHM9pptYebU8JGBR+FhIPmlgIuH7Uict6ka5uRibtX0sx5aY5hqGwEz4nTTUXQ=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: 69862c49f4ec4e710eaf569fae513e34_cdf942c1d5f111f19101525400de85a5
-    ReservedCode2: JrEaSfc0dWfzn56VyLew8waRyf+uCf4hvtSncP8RoZFDtJ7qq2ZrJebk2hXFqI8J86ZeWVgeS2HLH2G12FJAI24QYlsuvMJmyxaUq8TZ8dwEWYuDDNIuBPYUzp2mSMHM9pptYebU8JGBR+FhIPmlgIuH7Uict6ka5uRibtX0sx5aY5hqGwEz4nTTUXQ=
----
-
 # 固件来源与校验清单（SOURCES）
 
 本目录固件全部来自**上游官方发布**，未做任何二次修改。下表的 SHA256 均为本仓库**实测值**（下载后本地计算），可与上游发布页逐一比对。

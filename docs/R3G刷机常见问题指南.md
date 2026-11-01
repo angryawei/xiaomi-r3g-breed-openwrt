@@ -1,14 +1,3 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: 69862c49f4ec4e710eaf569fae513e34_83c49bb8a01b11f1a238525400e6dd8f
-    ReservedCode1: /mi1JihEVgNJw1E4xpfLbxS1dqlDxcmiUS4IOd34f4JJ7Y58a+tI/Z5IHxoA4ItBGNCtY1N5sXH5CGHoumjOXREfAsnmsVj9fWGYK223uoSQvGSmQmmZe19kLXn7c6YVzCleqTpi7bn0xMD6QBWTufGmqoH9nJkLXfq2mV9D0zA0iKRNIhmBJOI8Eu4=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: 69862c49f4ec4e710eaf569fae513e34_83c49bb8a01b11f1a238525400e6dd8f
-    ReservedCode2: /mi1JihEVgNJw1E4xpfLbxS1dqlDxcmiUS4IOd34f4JJ7Y58a+tI/Z5IHxoA4ItBGNCtY1N5sXH5CGHoumjOXREfAsnmsVj9fWGYK223uoSQvGSmQmmZe19kLXn7c6YVzCleqTpi7bn0xMD6QBWTufGmqoH9nJkLXfq2mV9D0zA0iKRNIhmBJOI8Eu4=
----
-
 # 小米 R3G 刷机常见问题指南
 
 > 适用场景：原厂固件刷 Breed → 内存启动 initramfs → LuCI 刷写 OpenWrt 23.05.6

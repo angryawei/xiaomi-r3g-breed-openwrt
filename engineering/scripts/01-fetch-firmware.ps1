@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     01-fetch-firmware.ps1 —— 按 SOURCES.md 下载小米 R3G 固件，并强制 SHA256 校验。
 

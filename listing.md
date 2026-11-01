@@ -1,15 +1,4 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: 69862c49f4ec4e710eaf569fae513e34_cd3943a6d5f111f19101525400de85a5
-    ReservedCode1: VRKOugveXKIrIqitbglWyiMVs0U4TVM5WYoUpS9ka7jrWFBnS9cG66ckanoKMKEXUHHiPijDO7JCGfzqozJ9jQaASM9qLFhNVcEgIcm66LzTm9IG+Aula1L3m150zuOXXd5EEiTbArK3La+hyw+a3kviWjAEQJ6QlpJKHzg6kB2rzT5YnUca3wVyM8Y=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: 69862c49f4ec4e710eaf569fae513e34_cd3943a6d5f111f19101525400de85a5
-    ReservedCode2: VRKOugveXKIrIqitbglWyiMVs0U4TVM5WYoUpS9ka7jrWFBnS9cG66ckanoKMKEXUHHiPijDO7JCGfzqozJ9jQaASM9qLFhNVcEgIcm66LzTm9IG+Aula1L3m150zuOXXd5EEiTbArK3La+hyw+a3kviWjAEQJ6QlpJKHzg6kB2rzT5YnUca3wVyM8Y=
----
-
-﻿# 小米 R3G 刷机资料清单（listing）
+# 小米 R3G 刷机资料清单（listing）
 
 > **GitHub 上传版说明**：本目录为脱敏副本，`configs\RBf60If6TGXb.yaml`（含机场订阅域名与节点 UUID）已移除，
 > 文中 WiFi 密码、root/SSH 口令、节点 UUID、REALITY 公钥与服务器域名均已替换为 `YOUR_*` 占位符或 `example.com`。
