@@ -1,16 +1,4 @@
 [README.md](https://github.com/user-attachments/files/34239038/README.md)
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: 69862c49f4ec4e710eaf569fae513e34_cc2cca5fd5f111f1b4e4525400cd780f
-    ReservedCode1: HGxH/8nNCRDBD7nJ1eRzk58oIREbOW+hlqCLpzSfhBJ3UEXeJGu1t8Rymw58qTMToTYduyVGDn7QhUgDiS54vlqHUfbQv3HlM3Jw98c/Y2Djsq7meGKa200qhPEz/A+AmVN4VOHkqnm13eCxnsS/0jPxyeuxqCedjGQ3nWSE+tZz13to3FwBjwdiK0M=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: 69862c49f4ec4e710eaf569fae513e34_cc2cca5fd5f111f1b4e4525400cd780f
-    ReservedCode2: HGxH/8nNCRDBD7nJ1eRzk58oIREbOW+hlqCLpzSfhBJ3UEXeJGu1t8Rymw58qTMToTYduyVGDn7QhUgDiS54vlqHUfbQv3HlM3Jw98c/Y2Djsq7meGKa200qhPEz/A+AmVN4VOHkqnm13eCxnsS/0jPxyeuxqCedjGQ3nWSE+tZz13to3FwBjwdiK0M=
----
-
-<div align="center">
 
 # 小米路由器 3G（R3G v1）刷机完整手册
 
