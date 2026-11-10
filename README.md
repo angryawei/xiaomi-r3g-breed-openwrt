@@ -16,7 +16,7 @@
 > 刷机方法来自 OpenWrt、Breed 等上游项目与社区既有做法，固件为上游官方原版。本项目做的是三件事：把散落的资料整合成可复现结构、把重复劳动脚本化、在**单台 R3G v1** 上逐条实测并记录失败分支。
 > 上游归属见 §7.1 与 [`engineering/firmware/SOURCES.md`](engineering/firmware/SOURCES.md)，许可边界见 §9。方法属于社区，坑和笔记属于我。
 
-本仓库把一台小米路由器 3G（R3G **v1**，MT7621A / 128MB NAND / 128MB RAM）从原厂固件刷到 OpenWrt、并落地旁路由透明代理的**完整可用资料**整理成可复现的工程结构：
+本仓库把一台小米路由器 3G（R3G **v1**，MT7621A / 128MB NAND / 128MB RAM）从原厂固件刷到 OpenWrt、并落地串行级联网关形态透明代理的**完整可用资料**整理成可复现的工程结构：
 
 - 官方固件（含原厂回滚包）+ 官方 SHA256，全部标源、可校验；
 - 刷机、备份、下载、拆包四段脚本，Windows 与路由器两端都能跑；
@@ -28,7 +28,7 @@
 
 - **性价比极高**：R3G v1 二手价远低于任何同规格的 MT7621 设备，却能给到 128MB NAND + 128MB RAM + USB 3.0 + AC1200 双频。跑透明代理（ShellCrash / mihomo 内核）时 CPU 和内存都有余量，不容易因为并发连接数被打满。
 - **刷机方案成熟**：Breed 引导、OpenWrt 官方 `ramips/mt7621` 支持、救砖路径全都齐备，社区验证过成千上万台，坑基本已经被踩平——本文第五节那张踩坑表就是证据。**它不是"能刷"，而是"刷坏了也能救回来"。**
-- **它的最佳用途不是当普通路由器**：作者建议刷完后用 **ShellCrash（CrashCore 内核）** 把它做成**全屋代理软路由**（旁路由模式）。ShellCrash 上游仓库：[`juewuy/ShellCrash`](https://github.com/juewuy/ShellCrash)（全部上游链接见 §7.1）。理由是——与其在手机、平板、电视、游戏机上一个个装客户端、一个个改配置，不如让一个设备在网关层统一接管：任意设备连上 WiFi 就自动走代理，不用装 App、不用逐台维护，换设备也不用重新配。
+- **它的最佳用途不是当普通路由器**：作者建议刷完后用 **ShellCrash（CrashCore 内核）** 把它做成**全屋代理软路由**（串行级联网关形态：主路由 WAN 接 R3G LAN，R3G 开 DHCP + NAT，全屋流量自动经过它）。ShellCrash 上游仓库：[`juewuy/ShellCrash`](https://github.com/juewuy/ShellCrash)（全部上游链接见 §7.1）。理由是——与其在手机、平板、电视、游戏机上一个个装客户端、一个个改配置，不如让一个设备在网关层统一接管：任意设备连上 WiFi 就自动走代理，不用装 App、不用逐台维护，换设备也不用重新配。
 
 ### 1.2 卡住了怎么办
 
@@ -40,6 +40,71 @@
 4. 需要人类经验时去 **R3G 刷机社区**（恩山无线论坛、OpenWrt 官方论坛 / GitHub issue）求助，附上机型、Breed 版本、固件版本。
 
 > 唯一不能做的事：在没搞清楚状态的情况下反复乱刷。R3G 有 Breed 兜底，但**乱刷会覆盖掉 Breed**，那才是真的变砖。
+
+---
+
+### 1.3 这套方案的定位与边界
+
+这不是一套"通用 OpenWrt 代理教程"，而是**一台 R3G v1 在真实家庭网络中跑了一年多之后的实录**。下面把边界写清楚，你动手前可以先判断它是否匹配需求。
+
+#### 它是什么
+
+- **串行级联网关**：主路由的 WAN 口接 R3G 的 LAN 口，R3G 开 DHCP + NAT，全屋流量自动经过它。注意**不是"旁路由"**——两者接线、网段、DHCP、覆盖方式完全不同，按旁路由去接线第一步就会错。
+- **纯 Redir 模式，无 TUN**：`config.yaml` 中 `tun.enable: false`，靠 iptables REDIRECT 把 TCP 流量劫持到代理内核。
+- **关闭无线**：R3G 只承担有线网关职责，WiFi 交给下游主路由。
+- **规则驱动的静态编排**：537 条显式规则，未使用 GEOSITE。
+
+#### 它能做到
+
+- 全屋设备自动覆盖，不需要逐台改网关或装客户端。
+- 国内流量直接走 DIRECT，不经过代理内核的用户态处理。
+- 代理内核故障时，watchdog 在 1 分钟内降级为纯 NAT 直连，**国内网络保持可用**。
+- 多节点自动故障转移，大带宽流量走负载聚合组。
+
+#### 它做不到（重要）
+
+| 限制 | 原因 | 影响 |
+|---|---|---|
+| **游戏等 UDP 流量不走代理** | Redir 只劫持 TCP 的 22/80/443/8080/8443；明文 UDP 不重定向（仅 DNS 53 劫持到 1053） | 游戏联机、QUIC/HTTP3 直连。需要 UDP 代理请改用 TUN |
+| **无法按终端分流** | 下游主路由做了第二层 NAT，R3G 上看不到终端真实 IP | 做不到"手机走代理、游戏机直连"这类设备级策略 |
+| **P2P / UDP 打洞成功率低** | 双层 NAT，NAT 类型劣化为 Symmetric | 部分 P2P 应用、语音对局异常 |
+| **R3G 是单点** | 架构决定 | R3G 故障即全屋断网 |
+| **延迟低 ≠ 速度快** | 探针只测延迟，不测吞吐 | 视频/下载需人工实测后调组序 |
+
+#### 两个会让人判断失误的配置陷阱
+
+1. **fwmark 是双值**。`/etc/ShellCrash/configs/ShellCrash.cfg` 写 `fwmark=7894`（`0x1ed6`），但实际 iptables 规则用的是 `0x1ed8`（7896），`routing-mark` 同样是 7896。**Redir 模式下生效的只有后者**，按 cfg 的 7894 去理解规则会全错。核对：`iptables -t nat -L shellcrash -v -n | grep -i mark`。
+2. **仓库里有两套部署形态**。本仓库的文档分别来自两个真实部署，参数不通用：
+
+| 维度 | iptables 形态 | nftables / fw4 形态 |
+|---|---|---|
+| 防火墙 | `iptables -t nat -L shellcrash` | `nft list table inet shellcrash` |
+| fwmark | `0x1ed8`（7896） | `0x1ed4` |
+| `firewall_area` | 3 | 1 |
+| `tun.enable` | false | true |
+| fake-ip 段 | `198.18.0.1/16` | `28.0.0.0/8` |
+| UDP 处理 | 不重定向（仅 DNS 53） | 与 TCP 一同打标 |
+
+   **动手前先确认自己是哪一套**，再决定读哪份文档。判断命令：
+
+   ```sh
+   iptables -t nat -L shellcrash -n 2>/dev/null | head    # 有输出 = iptables 形态
+   nft list table inet shellcrash 2>/dev/null | head      # 有输出 = nftables 形态
+   ```
+
+#### 如果你需要
+
+| 你的需求 | 应该怎么做 |
+|---|---|
+| 游戏加速 / UDP 代理 | 改用 TUN 模式（R3G 上会有性能开销，需实测） |
+| 设备级精细分流 | 主路由改桥接 / AP 模式，消掉双层 NAT |
+| 更高吞吐 | 换 x86 或 ARMv8 设备；MT7621 已接近其能力上限 |
+| 配置版本管理 | 本项目靠 `.bak_*` 快照人工回溯，未 git 化 |
+
+#### 想深入看设计依据
+
+- 拓扑取舍、分流规则为什么是这个顺序、选路体系怎么搭 → [`docs/串行级联网关组网与选路实录.md`](docs/串行级联网关组网与选路实录.md)
+- 代理故障为什么会拖垮全网、watchdog 怎么设计 → [`docs/故障隔离与watchdog设计.md`](docs/故障隔离与watchdog设计.md)
 
 ---
 
@@ -200,10 +265,13 @@ sh /tmp/00-backup-nand.sh
 | wget 报 `Connection aborted` | Python `http.server` 返回 HTTP/1.0，Breed 的 wget 不兼容 | 用 HTTP/1.1 + `Connection: close` 的自建服务器（`03-breed-memboot.txt` 做法 B） |
 | Breed Web 上传固件失败 / 提示固件太大 | initramfs > 4MB（23.05.6 = 5.51MB、24.10.4 ≈ 7MB） | 走内存启动（路线三），或先用 19.07.2 initramfs 过渡 |
 | 临时系统里 SSH 执行 `uci commit` / `ubus call system file_exec` 被拒 | initramfs 恢复模式默认开启 LuCI ACL，禁止敏感接口 | 改在 LuCI 网页「系统 → 备份/升级」刷写，不受 ACL 限制 |
-| 装了 OpenClash 起不来 / 依赖装不上 | R3G 只有 128MB 内存，OpenClash 需要 bash/curl/ruby 等重依赖，空间与内存都不够 | **改用 ShellCrash**（纯 shell 实现，内存占用低，适配 R3G） |
+| 犹豫 OpenClash 与 ShellCrash 怎么选 | — | **OpenClash 在 R3G v1 上可安装、可启动、可正常运行**，本项目未对它做并发压力测试。本项目主动选 ShellCrash：纯 shell 实现、依赖少、内存占用低，与 128MB 内存 + MT7621 单核的余量更匹配。这是**资源取舍**，不是 OpenClash 不可用 |
 | 23.05 起 LAN 口拿不到 IP / DHCP 不响应 | 23.05 默认把 dnsmasq 跑在 **ujail 沙箱**里，沙箱限制 RAW socket 权限，DHCP 无法发包 | `uci set dhcp.@dnsmasq[0].ujail='0'; uci commit dhcp; /etc/init.d/dnsmasq restart`；仍无效则注释 `/etc/init.d/dnsmasq` 中 `procd_add_jail` 相关行 |
 | ShellCrash 显示运行中，但 `nft list table inet shellcrash` 是空表，代理不生效 | `/etc/ShellCrash/configs/ShellCrash.cfg` 缺 `firewall_area`（及 `ipv6_redir`），`fw_start.sh` 里 `"" -le 3` 报 `sh: out of range`，nftables 规则被跳过 | 补 `firewall_area=1` 与 `ipv6_redir=OFF`，再 `sh /etc/ShellCrash/starts/fw_start.sh` |
 | 在内存系统里执行 `reboot` 后进不去 OpenWrt，反而出现小米原厂界面 | 内存系统重启即消失，Breed autoboot 启动了 NAND 上的原厂固件 | 这是正常回退，**不是变砖**；重新走路线二/三即可 |
+| 游戏联机不走代理、部分视频明明要走代理却仍是直连 | Redir 模式只劫持 TCP 的 22/80/443/8080/8443；明文 UDP 不做重定向，QUIC/HTTP3 因此直连 | **预期行为，不是配置错误**。需要 UDP / QUIC 走代理只能换 TUN 模式；唯一的 UDP 例外是 DNS 53 劫持到 1053 |
+| 按 `ShellCrash.cfg` 的 `fwmark=7894` 排查，规则就是匹配不上 | cfg 里的 7894（`0x1ed6`）在 Redir 模式下**不生效**，实际 iptables 规则用的是 `0x1ed8`（7896） | 以实际规则为准：`iptables -t nat -L shellcrash -v -n \| grep -i mark`。按 cfg 值去理解规则会得出完全错误的判断 |
+| 照本文档改完，规则写得对但流量不进来 | 仓库里存在两套部署形态（iptables 形态与 nftables/fw4 形态），fwmark、`firewall_area`、`tun.enable`、fake-ip 段全部不同，混用会失效 | 先判断当前是哪一套：`iptables -t nat -L shellcrash -n`（有输出即 iptables 形态）或 `nft list table inet shellcrash`（有输出即 nftables 形态），再按对应文档读 |
 | OpenWRTInvasion 被杀软报毒/隔离 | 漏洞利用脚本被判定为 HackTool | 临时把该目录加入 Defender 排除项，刷完立即恢复 |
 
 ---
@@ -232,13 +300,15 @@ r3g刷机（github上传版）/
 
 | 文件 | 用途 |
 |---|---|
-| [docs/R3G完整配置教程.md](docs/R3G完整配置教程.md) | 从刷机到旁路由配置的完整流程 |
+| [docs/R3G完整配置教程.md](docs/R3G完整配置教程.md) | 从刷机到网关侧透明代理配置的完整流程 |
 | [docs/R3G刷机常见问题指南.md](docs/R3G刷机常见问题指南.md) | 刷机阶段的异常处理（wget、boot、ACL 等） |
 | [docs/ShellCrash部署指南.md](docs/ShellCrash部署指南.md) | ShellCrash 部署标准流程：配置路径、控制命令、API、订阅解析 |
 | [docs/R3G_ShellCrash_故障排查手册.md](docs/R3G_ShellCrash_故障排查手册.md) | 透明代理落地后的排障 |
 | [docs/dnsmasq-init-修复说明.txt](docs/dnsmasq-init-修复说明.txt) | ujail 沙箱导致 DHCP 故障的修复细节 |
 | [docs/标准设置手册.md](docs/标准设置手册.md) | 系统层的标准设置项 |
 | [docs/部署与排障手册.md](docs/部署与排障手册.md) | 部署顺序与常见故障的处理清单 |
+| [docs/串行级联网关组网与选路实录.md](docs/串行级联网关组网与选路实录.md) | **设计依据**：拓扑取舍、地址规划、分流顺序原理、15 个代理组的分工、延迟≠带宽的实测反例 |
+| [docs/故障隔离与watchdog设计.md](docs/故障隔离与watchdog设计.md) | **设计依据**：两种失效模式的区分、三层故障隔离、watchdog 四个设计要点、验证方法 |
 
 ---
 
