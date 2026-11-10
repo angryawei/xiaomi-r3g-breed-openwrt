@@ -106,7 +106,7 @@
 **解决**：
 - 不要依赖 SSH 侧执行刷写类命令；
 - 改走 LuCI 界面手动刷写：`/cgi-bin/luci/admin/system/flash` 上传 `sysupgrade.bin`（CBI 表单走服务端，不受 ACL 限制）。
-- 注意：`system.reboot` 是可用的，**切勿误触发**——重启会丢失内存系统。
+- 注意：`system.reboot` 是可用的，**切勿误触发**：重启会丢失内存系统。
 
 ---
 
@@ -154,4 +154,3 @@
 | LuCI 刷写地址 | /cgi-bin/luci/admin/system/flash |
 | 验证命令 | `ubus system board` → rootfs_type=squashfs |
 | 刷写期间 | 切勿断电 |
-*（内容由AI生成，仅供参考）*

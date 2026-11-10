@@ -104,4 +104,3 @@ table inet shellcrash {
 # 检查策略路由:          ip rule list
 # 检查 TUN 设备:         ip link show utun
 # 测试透明代理:          curl -I http://www.google.com (从LAN客户端)
-（内容由AI生成，仅供参考）

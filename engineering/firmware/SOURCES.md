@@ -4,7 +4,7 @@
 
 - 下载根：`https://downloads.openwrt.org/releases/<版本>/targets/ramips/mt7621/`
 - 适配硬件：**小米路由器 3G（R3G）v1，MT7621A + 128MB NAND + 128MB DDR3**
-- ⚠️ **v1 与 v2 固件不通用**：R3G v2 为 16MB SPI NOR 版本，硬件分区完全不同，刷入 v1 固件必砖。本项目**全部文件仅适用于 v1**；**其他机型作者从未测试，且多数没有 USB 口**，一律不可套用。判定方法见根目录 `README.md`。
+- **v1 与 v2 固件不通用**：R3G v2 为 16MB SPI NOR 版本，硬件分区完全不同，刷入 v1 固件必砖。本项目**全部文件仅适用于 v1**；**其他机型作者从未测试，且多数没有 USB 口**，一律不可套用。判定方法见根目录 `README.md`。
 
 ---
 
@@ -59,7 +59,7 @@
 
 ## 四、不在本目录的东西
 
-`xiaomi_mir3g-universal-sysupgrade.bin`（Pineapple Cloner，Hak5 商业固件）**已移出本仓库**，原因是授权与用途不匹配（它是给 WiFi Pineapple MK7 硬件商业产品配套的，不是给 R3G 刷的开源固件）。不要去找它，也不要往 R3G 上刷。
+`xiaomi_mir3g-universal-sysupgrade.bin` 是第三方为商业硬件产品编译的镜像，**不属于本仓库内容**：它既非 OpenWrt 官方产物，也不是为 R3G 编译的，授权与用途均不匹配。不要去找它，也不要往 R3G 上刷。
 
 ---
 
@@ -101,4 +101,3 @@ OpenWrt 设备上：
 ```sh
 sha256sum /tmp/openwrt-*-sysupgrade.bin
 ```
-*（内容由AI生成，仅供参考）*

@@ -86,9 +86,9 @@ Clash 收到 DNS 请求后，把请求发给 127.0.0.1，结果又回到了自�
 ```yaml
 dns:
   nameserver:
-    - 127.0.0.1          # ❌ 死循环
+    - 127.0.0.1          # 错误：死循环
   direct-nameserver:
-    - 127.0.0.1          # ❌ 死循环
+    - 127.0.0.1          # 错误：死循环
 ```
 
 ### 解决方法
@@ -254,7 +254,7 @@ gpio-488 (blue:status) out lo ACTIVE LOW
 
 ### 结论
 
-疑似硬件故障——灯珠烧毁或排线松动（搬动设备时可能导致）。不影响功能，可忽略。
+疑似硬件故障：灯珠烧毁或排线松动（搬动设备时可能导致）。不影响功能，可忽略。
 
 ---
 
@@ -327,7 +327,7 @@ ShellCrash 通过 subconverter 转换订阅时，原始订阅链接中前 6 个�
    ```
 
    > **关键**：必须替换 `/etc/ShellCrash/yamls/config.yaml`，而非 `/tmp/ShellCrash/config.yaml`。
-   > 原因：`bfstart.sh` 启动时会检测 `yamls/config.yaml` 是否存在——若存在则**跳过订阅下载，直接使用该文件**。若替换 `/tmp` 下的文件，重启后会被覆盖。
+   > 原因：`bfstart.sh` 启动时会检测 `yamls/config.yaml` 是否存在，若存在则**跳过订阅下载，直接使用该文件**。若替换 `/tmp` 下的文件，重启后会被覆盖。
 
 4. 重启 CrashCore：
    ```bash
@@ -390,4 +390,3 @@ http_proxy=http://127.0.0.1:7890 wget -q -O - -T5 http://www.gstatic.com/generat
 2. `config.yaml`：将 `nameserver` 和 `direct-nameserver` 改为真实 DNS（如 `223.5.5.5`）
 
 否则问题会复现。
-*（内容由AI生成，仅供参考）*
