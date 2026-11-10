@@ -6,6 +6,8 @@
 
 **只适用于小米路由器 3G（R3G）v1 这一种机型。其他机型作者从未测试，且多数没有 USB 口，不要套用本仓库的任何内容。**
 
+**每次改了什么、为什么改，见 [CHANGELOG.md](CHANGELOG.md)。**
+
 </div>
 
 ---
@@ -281,6 +283,7 @@ sh /tmp/00-backup-nand.sh
 ```
 r3g刷机（github上传版）/
 ├── README.md                    本文件：路线、快速开始、踩坑表
+├── CHANGELOG.md                 更新记录：每次改动的内容、原因与影响
 ├── listing.md                   文件级清单（来源与用途索引）
 ├── .gitignore / .gitattributes  版本控制配置
 ├── docs/                        实测文档：完整配置教程、故障排查手册、
