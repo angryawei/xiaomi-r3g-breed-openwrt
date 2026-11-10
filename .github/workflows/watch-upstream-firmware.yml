@@ -90,7 +90,8 @@ jobs:
           TITLE='上游固件巡检异常：SOURCES.md 中的地址不可达或内容已变更'
 
           # 已存在同类 open issue 就不重复开，改为追加评论
-          EXISTING=$(gh issue list --state open --search '上游固件巡检 in:title' --json number --jq 'length' || echo 0)
+          EXISTING=$(gh issue list --state open --search '上游固件巡检 in:title' --json number --jq 'length' 2>/dev/null | head -n1 || true)
+          if [ -z "$EXISTING" ]; then EXISTING=0; fi
 
           {
             echo "定时巡检发现 \`engineering/firmware/SOURCES.md\` 中登记的上游固件存在问题。"
@@ -118,10 +119,12 @@ jobs:
           if [ "$EXISTING" -gt 0 ]; then
             NUM=$(gh issue list --state open --search '上游固件巡检 in:title' --json number --jq '.[0].number')
             echo "已存在 open issue #$NUM，追加评论。"
-            gh issue comment "$NUM" --body-file "$RUNNER_TEMP/issue.md"
+            gh issue comment "$NUM" --body-file "$RUNNER_TEMP/issue.md" \
+              || echo "::warning::追加 issue 评论失败，请检查 Issues 权限是否开启。"
           else
             echo "创建新 issue。"
-            gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/issue.md"
+            gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/issue.md" \
+              || echo "::warning::创建 issue 失败，请检查仓库是否启用了 Issues。"
           fi
 
       - name: 恢复正常时关闭告警 issue
