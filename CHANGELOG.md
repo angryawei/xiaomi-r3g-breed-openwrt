@@ -6,6 +6,52 @@
 
 ---
 
+## v2026.11.10 (二) · 新增固件校验脚本与上游巡检
+
+**一句话概括**：补上两件此前只能靠人肉完成的事——「怎么确认手里的固件没被改过」和「上游地址哪天失效了怎么第一时间知道」。新增三端可用的 SHA256 校验脚本，以及一个每周自动运行的上游巡检工作流，发现问题自动开 issue。
+
+**改动规模**：9 个文件，`+1031 / -29` 行
+
+| 文件 | 变化 |
+|---|---|
+| [engineering/scripts/03-verify-firmware.ps1](engineering/scripts/03-verify-firmware.ps1) | 新增，Windows 端按 `SHA256SUMS` 校验本地固件 |
+| [engineering/scripts/03-verify-firmware.sh](engineering/scripts/03-verify-firmware.sh) | 新增，Linux / macOS / OpenWrt 端同款校验（POSIX sh，兼容 BusyBox） |
+| [engineering/scripts/04-check-upstream.py](engineering/scripts/04-check-upstream.py) | 新增，巡检 `SOURCES.md` 里的上游地址是否可达、内容是否被替换 |
+| [.github/workflows/watch-upstream-firmware.yml](.github/workflows/watch-upstream-firmware.yml) | 新增，每周自动巡检，异常开 issue，恢复自动关闭 |
+| [engineering/firmware/SOURCES.md](engineering/firmware/SOURCES.md) | 第六节「校验方法」重写为脚本用法；补 24.10.4 initramfs 精确体积 |
+| [README.md](README.md) | 目录树补 3 个脚本；「固件获取与校验」一节改为脚本一键校验 |
+| [engineering/scripts/README.txt](engineering/scripts/README.txt) | 原文写「本目录暂无独立脚本文件」，与实际 7 个脚本不符，重写为完整索引 |
+| [engineering/scripts/01-fetch-firmware.ps1](engineering/scripts/01-fetch-firmware.ps1) | 编码改为 UTF-8 BOM + CRLF，修复 PowerShell 5.1 下的解析错误 |
+| [CHANGELOG.md](CHANGELOG.md) | 本节 |
+
+### 新增能力
+
+| 脚本 | 做什么 | 退出码 |
+|---|---|---|
+| `03-verify-firmware.ps1` | 逐个比对本地固件与 `SHA256SUMS`，失败时打印期望值与实际值 | 0 / 1 / 2 |
+| `03-verify-firmware.sh` | 同上，给 Linux / macOS / 路由器用 | 0 / 1 / 2 |
+| `04-check-upstream.py` | `head` 模式只比体积；`deep` 模式下载算哈希 | 0 / 1 / 2 |
+
+三个脚本都是只读的：不联网（`04` 除外，它本来就只查上游）、不下载（`04 --mode deep` 除外）、不改名、不删文件。退出码 0 表示通过，可直接串到别的流程里。
+
+### 为什么改
+
+此前文档里给的是 `Get-FileHash` 和 `sha256sum -c`，读者拿到 64 位十六进制之后要自己跟清单逐字符比对——没有明确的失败判据，长度看花眼了也容易放过。刷固件写错文件是刷成砖的直接原因，这一步不该靠人眼。
+
+另一半是上游侧的问题：OpenWrt 会把老版本从 `downloads.openwrt.org` 迁到 `archive.openwrt.org` 或直接下架，此时文档里的直链会静默 404，照文档操作的人会卡在第一步下载上，还以为是网络问题。更隐蔽的情况是上游重建同名文件——体积可能一样，只有哈希能发现。所以巡检分两档：`head` 快查可达性与体积，`deep` 下载算哈希确认内容。
+
+还顺便修了一个陈旧文本：`engineering/scripts/README.txt` 一直写着「本目录暂无独立脚本文件」，而目录里实际已有 7 个脚本。这句话会让人以为脚本要自己从文档里抠。
+
+### 对你有什么影响
+
+- 刷机前多跑一条命令即可：`03-verify-firmware.ps1`（Windows）或 `03-verify-firmware.sh`（Linux / macOS / 路由器）。不通过就别刷，脚本会直接告诉你哪个文件不对、差在哪。
+- 只校验手头已有的几个文件时加 `-AllowMissing`，缺失项只警告不算失败。
+- 想接进自己的自动化流程，看退出码就行，不用解析输出文本。
+- 上游失效不用再手动发现：工作流每周一自动跑，异常会在本仓库开 issue，恢复正常后自动关闭。
+- 如果你的 fork 或本地没有配置 Issues 权限，工作流会在开 issue 那一步失败，其余步骤（校验、摘要、产物）仍正常。
+
+---
+
 ## v2026.11.10 (二) 追加 · 网络标识泛化与署名规范化
 
 **一句话概括**：把仓库文本里仍指向真实部署的 AP SSID、内网网段、网关地址统一替换为示意值，并把 LICENSE 版权人由账号名改为自然人姓名。技术结论、拓扑层级、规则写法全部不变。

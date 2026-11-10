@@ -294,10 +294,13 @@ r3g刷机（github上传版）/
     ├── configs/                 配置模板（已脱敏：ShellCrash 模板、nftables 规则）
     ├── firmware/                官方固件（7 个 bin）+ SOURCES.md + SHA256SUMS
     └── scripts/
-        ├── 00-backup-nand.sh        刷机前 NAND 全量/分区备份（OpenWrt 上跑）
-        ├── 01-fetch-firmware.ps1    Windows 端按 SOURCES.md 下载并强校验
-        ├── 02-split-sysupgrade.py   拆 sysupgrade 为 kernel1 / rootfs0
-        └── 03-breed-memboot.txt     Breed 内存启动命令序列
+        ├── 00-backup-nand.sh          刷机前 NAND 全量/分区备份（OpenWrt 上跑）
+        ├── 01-fetch-firmware.ps1      Windows 端按 SOURCES.md 下载并强校验
+        ├── 02-split-sysupgrade.py     拆 sysupgrade 为 kernel1 / rootfs0
+        ├── 03-breed-memboot.txt       Breed 内存启动命令序列
+        ├── 03-verify-firmware.ps1     Windows 端本地固件 SHA256 校验
+        ├── 03-verify-firmware.sh      Linux / macOS / OpenWrt 端同款校验
+        └── 04-check-upstream.py       巡检上游地址与哈希是否变更（CI 每周跑）
 ```
 
 各文档的分工：
@@ -330,16 +333,29 @@ powershell -ExecutionPolicy Bypass -File .\engineering\scripts\01-fetch-firmware
 powershell -ExecutionPolicy Bypass -File .\engineering\scripts\01-fetch-firmware.ps1 -IncludeOptional
 ```
 
-手工校验：
+下载完成后单独再校验一遍（不重新下载，只比哈希，**刷机前必做**）：
 
 ```powershell
-# Windows
-Get-FileHash .\engineering\firmware\openwrt-23.05.6-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin -Algorithm SHA256
+# Windows：逐个比对 SHA256SUMS，失败时打印期望值 / 实际值
+powershell -ExecutionPolicy Bypass -File .\engineering\scripts\03-verify-firmware.ps1
+
+# 固件在别的目录，或只校验手头已有的几个
+powershell -ExecutionPolicy Bypass -File .\engineering\scripts\03-verify-firmware.ps1 -Dir D:\firmware -AllowMissing
 ```
 
 ```bash
-# Linux / macOS
-cd engineering/firmware && sha256sum -c SHA256SUMS
+# Linux / macOS / OpenWrt（POSIX sh 编写，兼容 BusyBox）
+chmod +x engineering/scripts/03-verify-firmware.sh
+./engineering/scripts/03-verify-firmware.sh
+```
+
+脚本以退出码交付结果（`0` 通过 / `1` 不通过 / `2` 环境或清单错误），可直接串进自动化流程；失败时输出差异明细，不需要肉眼比对 64 位十六进制。**校验不通过就不要刷。**
+
+上游地址本身是否还有效，用巡检脚本查（也由 GitHub Actions 每周自动跑一次）：
+
+```bash
+python engineering/scripts/04-check-upstream.py --mode head   # 只比体积，快
+python engineering/scripts/04-check-upstream.py --mode deep   # 下载算哈希，严
 ```
 
 已入库 7 个文件（合计约 50.1MB，单文件最大 23.35MB）：

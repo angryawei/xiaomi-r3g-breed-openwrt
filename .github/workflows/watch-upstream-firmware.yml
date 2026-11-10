@@ -1,0 +1,153 @@
+name: 上游固件巡检
+
+# 目的：上游固件站的老版本目录会被归档或下架，URL 静默失效后，照文档操作的人会
+# 卡在第一步下载上。本工作流定期确认 SOURCES.md 里登记的上游地址：
+#   1) 是否仍然可达（HTTP 200）
+#   2) 下载到的内容哈希是否仍与清单一致（防止上游静默替换同名文件）
+# 一旦异常，自动开 issue 提醒，恢复正常后自动关闭。
+
+on:
+  schedule:
+    # 每周一 03:00 UTC（北京时间 11:00）
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '检查模式：head 只比体积（快）；deep 下载算哈希（严）'
+        required: false
+        default: 'deep'
+        type: choice
+        options:
+          - deep
+          - head
+
+permissions:
+  contents: read
+  issues: write
+
+# 避免定时触发与手动触发重叠跑两份
+concurrency:
+  group: upstream-firmware-check
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: 校验上游固件可用性与哈希
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 准备 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 巡检上游固件
+        id: check
+        # 异常不直接中断作业，否则后面开 issue 的步骤跑不到
+        continue-on-error: true
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          if [ -z "$MODE" ]; then MODE=deep; fi
+          echo "检查模式：$MODE"
+          set +e
+          python engineering/scripts/04-check-upstream.py \
+            --mode "$MODE" \
+            --only all \
+            --report "$RUNNER_TEMP/report.md"
+          RC=$?
+          set -e
+          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+          echo "退出码：$RC"
+
+      - name: 写入作业摘要
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/report.md" ]; then
+            cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "巡检脚本未产出报告，请查看上一步日志。" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 上传报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-report
+          path: ${{ runner.temp }}/report.md
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: 异常时开 issue
+        if: steps.check.outputs.rc != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TITLE='上游固件巡检异常：SOURCES.md 中的地址不可达或内容已变更'
+
+          # 已存在同类 open issue 就不重复开，改为追加评论
+          EXISTING=$(gh issue list --state open --search '上游固件巡检 in:title' --json number --jq 'length' || echo 0)
+
+          {
+            echo "定时巡检发现 \`engineering/firmware/SOURCES.md\` 中登记的上游固件存在问题。"
+            echo ""
+            echo "- 触发方式：\`${{ github.event_name }}\`"
+            echo "- 检查模式：\`${{ github.event.inputs.mode || 'deep' }}\`"
+            echo "- 运行记录：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- 提交：\`${{ github.sha }}\`"
+            echo ""
+            echo "---"
+            echo ""
+            cat "$RUNNER_TEMP/report.md" 2>/dev/null || echo "_报告文件缺失_"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### 处理指引"
+            echo ""
+            echo "1. **不可达 / HTTP 404**：该版本已被上游归档或下架，需把 URL 改成新位置（OpenWrt 老版本通常迁至 <https://archive.openwrt.org/>），或把该版本标注为「已下架」，从文档刷机步骤中移除。"
+            echo "2. **哈希不符**：上游同名文件内容已变更。**不要**直接改清单里的 SHA256 了事——先确认是官方重新构建还是被替换，确认无误后再同步更新 \`SHA256SUMS\`、\`SOURCES.md\` 与本仓库入库的对应 bin。"
+            echo "3. **体积不符**：多半是上游重新打包或返回了错误页，用 \`--mode deep\` 复核一次。"
+            echo ""
+            echo "_本 issue 由 \`.github/workflows/watch-upstream-firmware.yml\` 自动创建。_"
+          } > "$RUNNER_TEMP/issue.md"
+
+          if [ "$EXISTING" -gt 0 ]; then
+            NUM=$(gh issue list --state open --search '上游固件巡检 in:title' --json number --jq '.[0].number')
+            echo "已存在 open issue #$NUM，追加评论。"
+            gh issue comment "$NUM" --body-file "$RUNNER_TEMP/issue.md"
+          else
+            echo "创建新 issue。"
+            gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/issue.md"
+          fi
+
+      - name: 恢复正常时关闭告警 issue
+        if: steps.check.outputs.rc == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NUMS=$(gh issue list --state open --search '上游固件巡检 in:title' --json number --jq '.[].number' || true)
+          if [ -z "$NUMS" ]; then
+            echo "无未关闭的告警 issue。"
+            exit 0
+          fi
+          for n in $NUMS; do
+            gh issue comment "$n" --body "本次巡检全部条目恢复正常（${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}），自动关闭。"
+            gh issue close "$n" --reason completed
+            echo "已关闭 #$n"
+          done
+
+      - name: 汇总退出码
+        if: always()
+        run: |
+          RC="${{ steps.check.outputs.rc }}"
+          echo "巡检退出码：${RC:-未产出}"
+          if [ "${RC:-1}" != "0" ]; then
+            echo "::error::上游固件巡检未通过，详见作业摘要与已创建的 issue。"
+            exit 1
+          fi
+          echo "上游固件巡检通过。"

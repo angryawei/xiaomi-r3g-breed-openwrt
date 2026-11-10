@@ -40,7 +40,7 @@
 
 | 文件名 | 体积 | 用途 | 官方下载 URL | SHA256 |
 |---|---|---|---|---|
-| `openwrt-24.10.4-ramips-mt7621-xiaomi_mi-router-3g-initramfs-kernel.bin` | 约 7 MB | 24.10.4 内存启动镜像，走"内存启动"路线时与新 sysupgrade 配套使用 | https://downloads.openwrt.org/releases/24.10.4/targets/ramips/mt7621/openwrt-24.10.4-ramips-mt7621-xiaomi_mi-router-3g-initramfs-kernel.bin | `97e4d2fed954654dbdb1a9b5b393307c83d5c116dde72d321f2f9c2f44e2bd0d` |
+| `openwrt-24.10.4-ramips-mt7621-xiaomi_mi-router-3g-initramfs-kernel.bin` | 6.83 MB (7,163,854 B) | 24.10.4 内存启动镜像，走"内存启动"路线时与新 sysupgrade 配套使用 | https://downloads.openwrt.org/releases/24.10.4/targets/ramips/mt7621/openwrt-24.10.4-ramips-mt7621-xiaomi_mi-router-3g-initramfs-kernel.bin | `97e4d2fed954654dbdb1a9b5b393307c83d5c116dde72d321f2f9c2f44e2bd0d` |
 
 > 未入库原因：仓库体积控制。需要时执行 `engineering\scripts\01-fetch-firmware.ps1 -IncludeOptional` 自动下载并校验。
 
@@ -84,7 +84,76 @@
 
 ## 六、校验方法
 
-Windows（PowerShell）：
+**刷机前必须先校验，不要肉眼比对 64 位十六进制。** 仓库自带两个脚本，覆盖 Windows 与 Linux / macOS / OpenWrt 三种环境；脚本只读、不联网、不改动任何文件。
+
+### 6.1 Windows
+
+在仓库根目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\engineering\scripts\03-verify-firmware.ps1
+```
+
+正常输出（7 个文件全部通过）：
+
+```text
+校验目录：...\engineering\firmware
+清单文件：...\engineering\firmware\SHA256SUMS
+条目 7 个
+------------------------------------------------------------------------------
+[1/7] 通过      breed-mt7621-xiaomi-r3g.bin  (134 KB)
+[2/7] 通过      miwifi_r3g_firmware_dbc3c_2.28.46.bin  (23.35 MB)
+...
+------------------------------------------------------------------------------
+通过 7 / 共 7
+全部校验通过。
+```
+
+校验失败时直接打印「期望值 / 实际值」并给出处理指引，退出码 1：
+
+```text
+[1/7] 校验失败  breed-mt7621-xiaomi-r3g.bin
+        期望 05ebb31f...638bed
+        实际 2d785888...38f893e
+...
+严禁刷入校验失败的文件。
+```
+
+- 退出码 `0` 全部通过；`1` 存在缺失或哈希不符；`2` 环境 / 清单错误。
+- 固件不在默认目录时，用 `-Dir D:\firmware` 指定。
+- 只校验手头已有的部分文件时，加 `-AllowMissing`（缺失项只警告，不算失败）。
+
+### 6.2 Linux / macOS
+
+```bash
+chmod +x engineering/scripts/03-verify-firmware.sh
+./engineering/scripts/03-verify-firmware.sh
+```
+
+参数与 Windows 版对齐：`-d` 指定目录、`-s` 指定清单、`-m` 放行缺失项，退出码含义一致。
+
+### 6.3 在 OpenWrt 设备上校验
+
+脚本用 POSIX sh 编写、兼容 BusyBox，把 `SHA256SUMS` 与固件一并传到 `/tmp` 后可直接运行：
+
+```sh
+cd /tmp
+./03-verify-firmware.sh
+# 或直接调用 BusyBox 自带实现
+sha256sum -c SHA256SUMS
+```
+
+只查单个文件：
+
+```sh
+sha256sum /tmp/openwrt-23.05.6-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin
+```
+
+若 `sha256sum` 不可用（部分裁剪固件），先装：`opkg update && opkg install coreutils-sha256sum`。
+
+### 6.4 手工校验（不想跑脚本时）
+
+Windows：
 
 ```powershell
 Get-FileHash .\openwrt-23.05.6-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin -Algorithm SHA256
@@ -94,10 +163,17 @@ Linux / macOS：
 
 ```bash
 sha256sum -c SHA256SUMS
+# macOS 无 sha256sum 时：
+shasum -a 256 -c SHA256SUMS
 ```
 
-OpenWrt 设备上：
+### 6.5 上游地址失效了怎么办
 
-```sh
-sha256sum /tmp/openwrt-*-sysupgrade.bin
+上游会归档或下架老版本。`engineering/scripts/04-check-upstream.py` 用于巡检清单里的 URL 是否仍有效、内容是否被替换：
+
+```bash
+python engineering/scripts/04-check-upstream.py              # 只比对体积，快
+python engineering/scripts/04-check-upstream.py --mode deep  # 下载算哈希，严
 ```
+
+该脚本由 `.github/workflows/watch-upstream-firmware.yml` 每周自动运行一次；异常时在本仓库开 issue 提醒，恢复正常后自动关闭。
